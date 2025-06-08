@@ -1,0 +1,580 @@
+---
+title: 'Events'
+description: 'Understanding events, schemas, and type-safe validation in kSync'
+---
+
+## What are Events?
+
+Events are the fundamental building blocks of kSync. They represent **immutable facts** about what happened in your application. Instead of directly modifying state, you create events that describe the changes.
+
+<CardGroup cols={2}>
+  <Card title="Immutable" icon="lock">
+    Events are never modified once created, providing a reliable audit trail
+  </Card>
+  <Card title="Type-Safe" icon="shield-check">
+    Every event is validated against a Zod schema at runtime
+  </Card>
+  <Card title="Timestamped" icon="clock">
+    Events include precise timestamps for ordering and conflict resolution
+  </Card>
+  <Card title="Traceable" icon="search">
+    Full provenance tracking with client ID and version numbers
+  </Card>
+</CardGroup>
+
+## Event Structure
+
+Every kSync event follows this structure:
+
+```typescript
+interface KSyncEvent<T = unknown> {
+  id: string;           // Unique identifier (UUID)
+  type: string;         // Event type (e.g., 'message-sent')
+  data: T;              // Event payload (your data)
+  timestamp: number;    // Unix timestamp in milliseconds
+  clientId: string;     // ID of the client that created the event
+  version: number;      // Sequence number for ordering
+}
+```
+
+### Example Event
+
+```typescript
+{
+  id: "evt_1703123456789_abc123",
+  type: "message-sent",
+  data: {
+    id: "msg_001",
+    content: "Hello, world!",
+    author: "alice",
+    channelId: "general"
+  },
+  timestamp: 1703123456789,
+  clientId: "client_alice_browser",
+  version: 42
+}
+```
+
+## Defining Event Schemas
+
+Use Zod schemas to define the structure and validation rules for your events:
+
+### Basic Schema
+
+```typescript
+import { z } from 'zod';
+import { createKSync } from '@klastra/ksync';
+
+const ksync = createKSync();
+
+// Define a message schema
+const MessageSchema = z.object({
+  id: z.string(),
+  content: z.string().min(1).max(1000),
+  author: z.string(),
+  channelId: z.string(),
+});
+
+// Register the schema
+ksync.defineSchema('message-sent', MessageSchema);
+```
+
+### Advanced Schema Features
+
+<Tabs>
+  <Tab title="Validation Rules">
+    ```typescript
+    const UserSchema = z.object({
+      id: z.string().uuid(),                    // Must be valid UUID
+      username: z.string()
+        .min(3, "Username too short")
+        .max(20, "Username too long")
+        .regex(/^[a-zA-Z0-9_]+$/, "Invalid characters"),
+      email: z.string().email(),               // Valid email format
+      age: z.number().int().min(13).max(120),  // Integer between 13-120
+      roles: z.array(z.enum(['user', 'admin', 'moderator'])),
+      metadata: z.record(z.string()).optional(), // Optional key-value pairs
+    });
+    
+    ksync.defineSchema('user-created', UserSchema);
+    ```
+  </Tab>
+  
+  <Tab title="Nested Objects">
+    ```typescript
+    const AddressSchema = z.object({
+      street: z.string(),
+      city: z.string(),
+      country: z.string(),
+      zipCode: z.string(),
+    });
+    
+    const OrderSchema = z.object({
+      id: z.string(),
+      items: z.array(z.object({
+        productId: z.string(),
+        quantity: z.number().positive(),
+        price: z.number().positive(),
+      })),
+      shippingAddress: AddressSchema,
+      billingAddress: AddressSchema.optional(),
+      total: z.number().positive(),
+    });
+    
+    ksync.defineSchema('order-placed', OrderSchema);
+    ```
+  </Tab>
+  
+  <Tab title="Union Types">
+    ```typescript
+    const NotificationSchema = z.discriminatedUnion('type', [
+      z.object({
+        type: z.literal('message'),
+        messageId: z.string(),
+        senderId: z.string(),
+      }),
+      z.object({
+        type: z.literal('friend-request'),
+        fromUserId: z.string(),
+        requestId: z.string(),
+      }),
+      z.object({
+        type: z.literal('system'),
+        level: z.enum(['info', 'warning', 'error']),
+        message: z.string(),
+      }),
+    ]);
+    
+    ksync.defineSchema('notification-created', NotificationSchema);
+    ```
+  </Tab>
+</Tabs>
+
+## Sending Events
+
+Once you've defined schemas, you can send type-safe events:
+
+### Basic Event Sending
+
+```typescript
+// Send a message event
+await ksync.send('message-sent', {
+  id: 'msg_001',
+  content: 'Hello, world!',
+  author: 'alice',
+  channelId: 'general',
+});
+
+// TypeScript will catch errors at compile time
+await ksync.send('message-sent', {
+  id: 'msg_002',
+  content: 123, // ❌ TypeScript error: should be string
+  author: 'bob',
+  channelId: 'general',
+});
+```
+
+### Batch Event Sending
+
+For better performance, kSync automatically batches events:
+
+```typescript
+// These events will be batched together
+await Promise.all([
+  ksync.send('user-joined', { userId: 'user1', channelId: 'general' }),
+  ksync.send('user-joined', { userId: 'user2', channelId: 'general' }),
+  ksync.send('user-joined', { userId: 'user3', channelId: 'general' }),
+]);
+```
+
+### Error Handling
+
+```typescript
+try {
+  await ksync.send('message-sent', {
+    id: 'msg_003',
+    content: '', // ❌ Violates min length rule
+    author: 'charlie',
+    channelId: 'general',
+  });
+} catch (error) {
+  if (error instanceof z.ZodError) {
+    console.error('Validation failed:', error.errors);
+  }
+}
+```
+
+## Listening to Events
+
+Set up event listeners to react to events as they happen:
+
+### Basic Event Listeners
+
+```typescript
+// Listen for message events
+ksync.on('message-sent', (event) => {
+  const { content, author, channelId } = event.data;
+  console.log(`${author} in #${channelId}: ${content}`);
+  
+  // Update your UI
+  addMessageToChannel(channelId, event.data);
+});
+
+// Listen for user events
+ksync.on('user-joined', (event) => {
+  const { userId, channelId } = event.data;
+  console.log(`User ${userId} joined #${channelId}`);
+  
+  // Update user list
+  addUserToChannel(channelId, userId);
+});
+```
+
+### Type-Safe Event Handlers
+
+```typescript
+// Define typed event handlers
+type MessageEvent = z.infer<typeof MessageSchema>;
+
+const handleMessage = (event: KSyncEvent<MessageEvent>) => {
+  // TypeScript knows the exact shape of event.data
+  const { id, content, author, channelId } = event.data;
+  
+  // Your handler logic here
+  updateMessageUI(event.data);
+};
+
+ksync.on('message-sent', handleMessage);
+```
+
+### Removing Event Listeners
+
+```typescript
+// Remove specific listener
+ksync.off('message-sent', handleMessage);
+
+// Remove all listeners for an event type
+ksync.off('message-sent');
+```
+
+## Event Patterns
+
+### Command Events
+
+Events that represent user actions or commands:
+
+```typescript
+// User actions
+ksync.defineSchema('message-send', z.object({
+  content: z.string(),
+  channelId: z.string(),
+}));
+
+ksync.defineSchema('user-join-channel', z.object({
+  userId: z.string(),
+  channelId: z.string(),
+}));
+
+ksync.defineSchema('file-upload', z.object({
+  fileName: z.string(),
+  fileSize: z.number(),
+  mimeType: z.string(),
+  uploadUrl: z.string(),
+}));
+```
+
+### State Change Events
+
+Events that represent changes to application state:
+
+```typescript
+// State changes
+ksync.defineSchema('message-edited', z.object({
+  messageId: z.string(),
+  newContent: z.string(),
+  editedAt: z.number(),
+}));
+
+ksync.defineSchema('user-status-changed', z.object({
+  userId: z.string(),
+  status: z.enum(['online', 'away', 'busy', 'offline']),
+  lastSeen: z.number(),
+}));
+
+ksync.defineSchema('channel-settings-updated', z.object({
+  channelId: z.string(),
+  settings: z.object({
+    name: z.string().optional(),
+    description: z.string().optional(),
+    isPrivate: z.boolean().optional(),
+  }),
+}));
+```
+
+### System Events
+
+Events generated by the system or external services:
+
+```typescript
+// System events
+ksync.defineSchema('user-authenticated', z.object({
+  userId: z.string(),
+  sessionId: z.string(),
+  loginMethod: z.enum(['password', 'oauth', 'sso']),
+}));
+
+ksync.defineSchema('backup-completed', z.object({
+  backupId: z.string(),
+  timestamp: z.number(),
+  size: z.number(),
+  checksum: z.string(),
+}));
+
+ksync.defineSchema('rate-limit-exceeded', z.object({
+  userId: z.string(),
+  action: z.string(),
+  limit: z.number(),
+  resetTime: z.number(),
+}));
+```
+
+## Event Versioning
+
+As your application evolves, you may need to change event schemas:
+
+### Schema Evolution
+
+```typescript
+// Version 1
+const MessageV1Schema = z.object({
+  id: z.string(),
+  content: z.string(),
+  author: z.string(),
+});
+
+// Version 2 - Add optional fields
+const MessageV2Schema = z.object({
+  id: z.string(),
+  content: z.string(),
+  author: z.string(),
+  channelId: z.string().optional(), // New optional field
+  mentions: z.array(z.string()).optional(), // New optional field
+});
+
+// Version 3 - Make channelId required
+const MessageV3Schema = z.object({
+  id: z.string(),
+  content: z.string(),
+  author: z.string(),
+  channelId: z.string(), // Now required
+  mentions: z.array(z.string()).optional(),
+  attachments: z.array(z.object({
+    id: z.string(),
+    url: z.string(),
+    type: z.string(),
+  })).optional(), // New optional field
+});
+```
+
+### Migration Strategy
+
+```typescript
+// Handle multiple schema versions
+const handleMessageEvent = (event: KSyncEvent) => {
+  // Try parsing with latest schema first
+  try {
+    const data = MessageV3Schema.parse(event.data);
+    // Handle V3 format
+    return handleMessageV3(data);
+  } catch {
+    try {
+      const data = MessageV2Schema.parse(event.data);
+      // Handle V2 format, migrate to V3
+      return handleMessageV2(data);
+    } catch {
+      const data = MessageV1Schema.parse(event.data);
+      // Handle V1 format, migrate to V3
+      return handleMessageV1(data);
+    }
+  }
+};
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Event Naming" icon="tag">
+    Use consistent, descriptive event names:
+    
+    ```typescript
+    // ✅ Good - Clear and specific
+    'message-sent'
+    'user-joined-channel'
+    'file-upload-completed'
+    'payment-processed'
+    
+    // ❌ Bad - Vague or inconsistent
+    'message'
+    'user'
+    'fileUploaded'
+    'payment_done'
+    ```
+  </Accordion>
+
+  <Accordion title="Schema Design" icon="blueprint">
+    Design schemas for evolution and clarity:
+    
+    ```typescript
+    // ✅ Good - Extensible and clear
+    const OrderSchema = z.object({
+      id: z.string(),
+      customerId: z.string(),
+      items: z.array(OrderItemSchema),
+      status: z.enum(['pending', 'confirmed', 'shipped', 'delivered']),
+      metadata: z.record(z.unknown()).optional(), // For future extensions
+    });
+    
+    // ❌ Bad - Rigid and unclear
+    const OrderSchema = z.object({
+      data: z.any(), // Too generic
+      type: z.string(), // Unclear purpose
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Event Granularity" icon="grain">
+    Choose appropriate event granularity:
+    
+    ```typescript
+    // ✅ Good - Atomic events
+    await ksync.send('user-profile-updated', {
+      userId: 'user123',
+      field: 'email',
+      oldValue: 'old@example.com',
+      newValue: 'new@example.com',
+    });
+    
+    // ❌ Bad - Too coarse-grained
+    await ksync.send('user-changed', {
+      userId: 'user123',
+      changes: { /* everything */ },
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Error Handling" icon="exclamation-triangle">
+    Always handle validation errors gracefully:
+    
+    ```typescript
+    const sendMessage = async (content: string) => {
+      try {
+        await ksync.send('message-sent', {
+          id: generateId(),
+          content,
+          author: currentUser.id,
+          channelId: currentChannel.id,
+        });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          showValidationError(error.errors);
+        } else {
+          showGenericError('Failed to send message');
+        }
+      }
+    };
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Performance Considerations
+
+### Event Size
+
+Keep events reasonably sized for optimal performance:
+
+```typescript
+// ✅ Good - Lightweight event
+const MessageSchema = z.object({
+  id: z.string(),
+  content: z.string().max(2000), // Reasonable limit
+  author: z.string(),
+  channelId: z.string(),
+});
+
+// ❌ Bad - Heavy event
+const MessageSchema = z.object({
+  id: z.string(),
+  content: z.string(), // No size limit
+  author: z.object({
+    // Entire user object embedded
+    id: z.string(),
+    profile: z.object({
+      avatar: z.string(), // Base64 image data
+      preferences: z.record(z.unknown()),
+      // ... lots more data
+    }),
+  }),
+});
+```
+
+### Validation Performance
+
+Zod schemas are fast, but complex validations can impact performance:
+
+```typescript
+// ✅ Good - Simple, fast validation
+const SimpleSchema = z.object({
+  id: z.string(),
+  value: z.number(),
+});
+
+// ⚠️ Careful - Complex validation
+const ComplexSchema = z.object({
+  id: z.string().refine(async (id) => {
+    // Async validation can be slow
+    return await checkIdExists(id);
+  }),
+  data: z.array(z.object({
+    // Nested arrays can be expensive to validate
+    items: z.array(z.object({
+      value: z.string().transform((val) => {
+        // Complex transformations add overhead
+        return expensiveTransform(val);
+      }),
+    })),
+  })),
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Storage"
+    icon="database"
+    href="/concepts/storage"
+  >
+    Learn how events are persisted and retrieved
+  </Card>
+  <Card
+    title="Materializers"
+    icon="refresh"
+    href="/concepts/materializers"
+  >
+    Transform events into queryable state
+  </Card>
+  <Card
+    title="Sync"
+    icon="wifi"
+    href="/concepts/sync"
+  >
+    Understand real-time event synchronization
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/ksync-class"
+  >
+    Explore the complete event API
+  </Card>
+</CardGroup> 

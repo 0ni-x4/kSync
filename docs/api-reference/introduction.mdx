@@ -1,0 +1,315 @@
+---
+title: 'API Reference'
+description: 'Complete API documentation for kSync'
+---
+
+## Overview
+
+This section provides comprehensive documentation for all kSync APIs, including classes, interfaces, types, and utility functions.
+
+<CardGroup cols={2}>
+  <Card
+    title="KSync Class"
+    icon="code"
+    href="/api-reference/ksync-class"
+  >
+    Main kSync class with all core methods
+  </Card>
+  <Card
+    title="Storage APIs"
+    icon="database"
+    href="/api-reference/storage"
+  >
+    Storage interfaces and implementations
+  </Card>
+  <Card
+    title="Sync Client"
+    icon="wifi"
+    href="/api-reference/sync-client"
+  >
+    WebSocket sync client API
+  </Card>
+  <Card
+    title="Types"
+    icon="typescript"
+    href="/api-reference/types"
+  >
+    TypeScript interfaces and types
+  </Card>
+</CardGroup>
+
+## Quick Reference
+
+### Core Methods
+
+```typescript
+import { createKSync } from '@klastra/ksync';
+
+const ksync = createKSync();
+
+// Schema definition
+ksync.defineSchema(type, schema)
+
+// Event operations
+await ksync.send(type, data)
+ksync.on(type, listener)
+ksync.off(type, listener?)
+
+// State management
+ksync.defineMaterializer(name, fn)
+ksync.getState(name)
+
+// Lifecycle
+await ksync.initialize(storage?, sync?)
+await ksync.close()
+```
+
+### Factory Functions
+
+```typescript
+import { createKSync } from '@klastra/ksync';
+
+// Basic instance
+const ksync = createKSync();
+
+// With configuration
+const ksync = createKSync({
+  clientId: 'my-client',
+  serverUrl: 'ws://localhost:8080',
+  debug: true
+});
+```
+
+### Storage Classes
+
+```typescript
+import { MemoryStorage, IndexedDBStorage } from '@klastra/ksync';
+
+const memoryStorage = new MemoryStorage();
+const indexedDBStorage = new IndexedDBStorage();
+```
+
+### Sync Classes
+
+```typescript
+import { WebSocketSyncClient } from '@klastra/ksync';
+
+const sync = new WebSocketSyncClient('ws://localhost:8080');
+```
+
+## Type Safety
+
+kSync is fully typed with TypeScript. All APIs provide complete type safety:
+
+```typescript
+import { z } from 'zod';
+import { KSyncEvent, createKSync } from '@klastra/ksync';
+
+const MessageSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  author: z.string(),
+});
+
+type MessageData = z.infer<typeof MessageSchema>;
+
+const ksync = createKSync();
+ksync.defineSchema('message', MessageSchema);
+
+// Type-safe event handler
+ksync.on('message', (event: KSyncEvent<MessageData>) => {
+  // event.data is fully typed as MessageData
+  console.log(event.data.content);
+});
+
+// Type-safe event sending
+await ksync.send('message', {
+  id: 'msg-1',
+  content: 'Hello',
+  author: 'Alice'
+}); // ✅ Typed correctly
+
+await ksync.send('message', {
+  id: 'msg-2',
+  content: 123, // ❌ TypeScript error
+  author: 'Bob'
+});
+```
+
+## Error Handling
+
+All kSync APIs use standard JavaScript error handling:
+
+```typescript
+import { KSyncError } from '@klastra/ksync';
+
+try {
+  await ksync.send('message', invalidData);
+} catch (error) {
+  if (error instanceof KSyncError) {
+    console.error('kSync error:', error.message);
+  } else if (error instanceof z.ZodError) {
+    console.error('Validation error:', error.errors);
+  } else {
+    console.error('Unknown error:', error);
+  }
+}
+```
+
+## Configuration Options
+
+### KSyncConfig
+
+```typescript
+interface KSyncConfig {
+  clientId?: string;           // Unique client identifier
+  serverUrl?: string;          // WebSocket server URL
+  storage?: KSyncStorage;      // Custom storage implementation
+  sync?: KSyncSync;           // Custom sync implementation
+  debug?: boolean;            // Enable debug logging
+  eventBatchSize?: number;    // Max events per batch
+  batchTimeout?: number;      // Batch timeout in ms
+}
+```
+
+### Storage Options
+
+```typescript
+// IndexedDB configuration
+interface IndexedDBConfig {
+  dbName?: string;            // Database name
+  version?: number;           // Schema version
+  maxEvents?: number;         // Max events to keep
+  maxAge?: number;           // Max age in milliseconds
+}
+
+// Memory storage (no configuration needed)
+const memoryStorage = new MemoryStorage();
+```
+
+### Sync Options
+
+```typescript
+// WebSocket sync configuration
+interface WebSocketConfig {
+  url: string;                // WebSocket server URL
+  maxRetries?: number;        // Max reconnection attempts
+  retryDelay?: number;        // Delay between retries (ms)
+  heartbeatInterval?: number; // Heartbeat interval (ms)
+  debug?: boolean;           // Enable debug logging
+}
+```
+
+## Event Lifecycle
+
+Understanding the event lifecycle helps with debugging and optimization:
+
+```mermaid
+graph TD
+    A[User Action] --> B[ksync.send()]
+    B --> C[Schema Validation]
+    C --> D[Event Creation]
+    D --> E[Local Storage]
+    E --> F[Event Listeners]
+    F --> G[UI Update]
+    E --> H[Batch Queue]
+    H --> I[WebSocket Send]
+    I --> J[Server Broadcast]
+    J --> K[Other Clients]
+```
+
+1. **User Action**: User performs an action in the UI
+2. **Event Sending**: `ksync.send()` is called with event data
+3. **Schema Validation**: Event data is validated against Zod schema
+4. **Event Creation**: kSync creates a `KSyncEvent` with metadata
+5. **Local Storage**: Event is stored locally for persistence
+6. **Event Listeners**: Local event listeners are triggered
+7. **UI Update**: UI updates optimistically
+8. **Batch Queue**: Event is added to batch queue for sync
+9. **WebSocket Send**: Batched events are sent to server
+10. **Server Broadcast**: Server broadcasts to other clients
+
+## Performance Considerations
+
+### Event Batching
+
+kSync automatically batches events for optimal performance:
+
+```typescript
+// These events will be batched together
+await Promise.all([
+  ksync.send('user-action', { type: 'click', target: 'button1' }),
+  ksync.send('user-action', { type: 'click', target: 'button2' }),
+  ksync.send('user-action', { type: 'click', target: 'button3' }),
+]);
+
+// Sent as a single WebSocket message after 50ms or 10 events
+```
+
+### Memory Management
+
+kSync includes built-in memory management:
+
+```typescript
+// Automatic cleanup of old events
+const ksync = createKSync({
+  storage: new IndexedDBStorage({
+    maxEvents: 10000,  // Keep max 10k events
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  })
+});
+```
+
+### Connection Efficiency
+
+- **Single Connection**: Only one WebSocket connection per origin
+- **Automatic Reconnection**: Handles network interruptions
+- **Heartbeat**: Minimal overhead for connection health
+- **Compression**: Automatic compression for large payloads
+
+## Browser Compatibility
+
+kSync supports all modern browsers:
+
+| Feature | Chrome | Firefox | Safari | Edge |
+|---------|--------|---------|--------|------|
+| **IndexedDB** | ✅ 23+ | ✅ 10+ | ✅ 7+ | ✅ 12+ |
+| **WebSocket** | ✅ 16+ | ✅ 11+ | ✅ 6+ | ✅ 12+ |
+| **Web Locks** | ✅ 69+ | ✅ 96+ | ✅ 15.4+ | ✅ 79+ |
+
+<Note>
+  For browsers without Web Locks API support, kSync automatically falls back to IndexedDB-based tab coordination.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="KSync Class"
+    icon="code"
+    href="/api-reference/ksync-class"
+  >
+    Detailed documentation for the main KSync class
+  </Card>
+  <Card
+    title="Storage APIs"
+    icon="database"
+    href="/api-reference/storage"
+  >
+    Storage interfaces and implementations
+  </Card>
+  <Card
+    title="Examples"
+    icon="play"
+    href="/examples/introduction"
+  >
+    See the APIs in action with real examples
+  </Card>
+  <Card
+    title="Guides"
+    icon="book"
+    href="/guides/basic-usage"
+  >
+    Step-by-step guides for common use cases
+  </Card>
+</CardGroup> 

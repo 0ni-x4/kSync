@@ -1,0 +1,431 @@
+---
+title: 'Examples'
+description: 'Real-world examples and use cases for kSync'
+---
+
+## Overview
+
+This section provides practical examples demonstrating how to use kSync in real-world applications. Each example includes complete, runnable code with explanations.
+
+<CardGroup cols={2}>
+  <Card
+    title="Chat Application"
+    icon="message-circle"
+    href="/examples/chat-app"
+  >
+    Real-time chat with typing indicators and presence
+  </Card>
+  <Card
+    title="Todo Sync"
+    icon="check-square"
+    href="/examples/todo-sync"
+  >
+    Collaborative todo list with offline support
+  </Card>
+  <Card
+    title="AI Streaming"
+    icon="robot"
+    href="/examples/ai-streaming"
+  >
+    AI chat with streaming responses and presence
+  </Card>
+  <Card
+    title="Multiplayer Game"
+    icon="gamepad-2"
+    href="/examples/multiplayer-game"
+  >
+    Real-time multiplayer game with 100+ players
+  </Card>
+</CardGroup>
+
+## Running Examples
+
+All examples are included in the kSync repository and can be run locally:
+
+### Prerequisites
+
+```bash
+# Clone the repository
+git clone https://github.com/klastra-ai/ksync.git
+cd ksync
+
+# Install dependencies
+bun install
+```
+
+### Basic Examples
+
+<Tabs>
+  <Tab title="Chat App">
+    ```bash
+    # Terminal 1: Start the server
+    bun run server/websocket-server.ts
+    
+    # Terminal 2: Run the chat example
+    bun run examples/basic.ts
+    ```
+  </Tab>
+  
+  <Tab title="Sync Demo">
+    ```bash
+    # Terminal 1: Start the server
+    bun run server/websocket-server.ts
+    
+    # Terminal 2: Run the sync example
+    bun run examples/sync.ts
+    ```
+  </Tab>
+  
+  <Tab title="AI Streaming">
+    ```bash
+    # Terminal 1: Start the server
+    bun run examples/nextjs-game/server.ts
+    
+    # Terminal 2: Run the streaming example
+    bun run examples/streaming.ts
+    ```
+  </Tab>
+</Tabs>
+
+### Next.js Game Example
+
+```bash
+# Terminal 1: Start the game server
+cd examples/nextjs-game
+bun run server.ts
+
+# Terminal 2: Start the Next.js app
+bun run dev
+
+# Open http://localhost:3000 in multiple tabs
+```
+
+## Example Categories
+
+### 🚀 Getting Started
+
+Perfect for beginners learning kSync fundamentals:
+
+- **Basic Chat**: Simple message sending and receiving
+- **Schema Validation**: Type-safe event handling
+- **Local Storage**: Offline-first development
+- **Event Listeners**: Reactive UI updates
+
+### 🔄 Real-Time Sync
+
+Examples demonstrating multi-client synchronization:
+
+- **Todo Sync**: Collaborative task management
+- **Presence Tracking**: User online/offline status
+- **Conflict Resolution**: Handling concurrent edits
+- **Connection Management**: Reconnection and error handling
+
+### 🤖 AI Integration
+
+AI-powered applications with streaming:
+
+- **Streaming Chat**: Word-by-word AI responses
+- **Presence Updates**: Real-time typing indicators
+- **Error Handling**: Graceful failure management
+- **Performance**: Efficient streaming protocols
+
+### 🎮 Advanced Use Cases
+
+Complex applications showcasing kSync's capabilities:
+
+- **Multiplayer Games**: 100+ concurrent players
+- **Real-Time Collaboration**: Document editing
+- **IoT Dashboards**: Sensor data streaming
+- **Financial Trading**: Real-time price updates
+
+## Code Structure
+
+Each example follows a consistent structure:
+
+```
+examples/
+├── basic.ts              # Simple chat application
+├── sync.ts               # Multi-client synchronization
+├── streaming.ts          # AI streaming example
+├── nextjs-game/          # Complete Next.js application
+│   ├── server.ts         # Game server
+│   ├── app/page.tsx      # React components
+│   └── lib/ksync-client.ts # Client configuration
+└── README.md             # Examples overview
+```
+
+### Example Template
+
+Each example includes:
+
+1. **Schema Definitions**: Zod schemas for type safety
+2. **Event Handlers**: Reactive event processing
+3. **State Management**: Materializers for UI state
+4. **Error Handling**: Graceful error recovery
+5. **Performance**: Optimizations and best practices
+
+## Interactive Demos
+
+Try these examples in your browser:
+
+<CardGroup cols={2}>
+  <Card
+    title="Live Chat Demo"
+    icon="external-link"
+    href="https://ksync-chat-demo.vercel.app"
+  >
+    Real-time chat application with multiple users
+  </Card>
+  <Card
+    title="Todo Sync Demo"
+    icon="external-link"
+    href="https://ksync-todo-demo.vercel.app"
+  >
+    Collaborative todo list with offline support
+  </Card>
+  <Card
+    title="Game Demo"
+    icon="external-link"
+    href="https://ksync-game-demo.vercel.app"
+  >
+    Multiplayer game with real-time movement
+  </Card>
+  <Card
+    title="AI Chat Demo"
+    icon="external-link"
+    href="https://ksync-ai-demo.vercel.app"
+  >
+    AI chat with streaming responses
+  </Card>
+</CardGroup>
+
+## Learning Path
+
+Follow this recommended learning path:
+
+### 1. Start with Basics
+
+```typescript
+// examples/basic.ts
+import { z } from 'zod';
+import { createKSync } from '@klastra/ksync';
+
+const ksync = createKSync();
+
+// Define schema
+ksync.defineSchema('message', z.object({
+  content: z.string(),
+  author: z.string(),
+}));
+
+// Listen for events
+ksync.on('message', (event) => {
+  console.log(`${event.data.author}: ${event.data.content}`);
+});
+
+// Send events
+await ksync.send('message', {
+  content: 'Hello, world!',
+  author: 'Alice',
+});
+```
+
+### 2. Add Real-Time Sync
+
+```typescript
+// Enable real-time synchronization
+const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080',
+  debug: true,
+});
+
+await ksync.initialize();
+```
+
+### 3. Implement State Management
+
+```typescript
+// Define materializers for UI state
+ksync.defineMaterializer('messages', (events) => {
+  return events
+    .filter(e => e.type === 'message')
+    .map(e => e.data)
+    .sort((a, b) => a.timestamp - b.timestamp);
+});
+
+// Get current state
+const messages = ksync.getState('messages');
+```
+
+### 4. Add Advanced Features
+
+```typescript
+// Streaming support
+const streamId = await ksync.startStream('ai-response', {
+  prompt: 'Tell me a story',
+  model: 'gpt-4',
+});
+
+// Presence tracking
+ksync.updatePresence({
+  status: 'online',
+  currentPage: '/chat',
+});
+```
+
+## Common Patterns
+
+### Event-Driven Architecture
+
+```typescript
+// Command events (user actions)
+await ksync.send('user-join-channel', { userId, channelId });
+await ksync.send('message-send', { content, channelId });
+await ksync.send('user-leave-channel', { userId, channelId });
+
+// State events (system responses)
+await ksync.send('channel-updated', { channelId, memberCount });
+await ksync.send('message-delivered', { messageId, timestamp });
+```
+
+### Optimistic Updates
+
+```typescript
+// Update UI immediately
+addMessageToUI(messageData);
+
+// Send event (may fail)
+try {
+  await ksync.send('message', messageData);
+} catch (error) {
+  // Revert UI on failure
+  removeMessageFromUI(messageData.id);
+  showError('Failed to send message');
+}
+```
+
+### Offline Support
+
+```typescript
+// Events are queued when offline
+await ksync.send('message', data); // Works offline
+
+// Sync when connection returns
+ksync.on('sync-complete', () => {
+  console.log('All offline events synced!');
+});
+```
+
+## Performance Tips
+
+### Event Batching
+
+```typescript
+// Events are automatically batched
+const promises = users.map(user => 
+  ksync.send('user-joined', { userId: user.id })
+);
+
+await Promise.all(promises); // Sent as single batch
+```
+
+### Memory Management
+
+```typescript
+// Configure automatic cleanup
+const ksync = createKSync({
+  storage: new IndexedDBStorage({
+    maxEvents: 10000,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  })
+});
+```
+
+### Connection Efficiency
+
+```typescript
+// Only one connection per origin
+// Multiple tabs share the same connection
+// Automatic reconnection on network issues
+```
+
+## Troubleshooting
+
+### Common Issues
+
+<AccordionGroup>
+  <Accordion title="Events not syncing" icon="wifi-slash">
+    Check that the server is running and accessible:
+    
+    ```bash
+    # Test WebSocket connection
+    curl -i -N -H "Connection: Upgrade" \
+         -H "Upgrade: websocket" \
+         -H "Sec-WebSocket-Key: test" \
+         -H "Sec-WebSocket-Version: 13" \
+         http://localhost:8080/
+    ```
+  </Accordion>
+
+  <Accordion title="Schema validation errors" icon="exclamation-triangle">
+    Ensure your event data matches the schema:
+    
+    ```typescript
+    try {
+      await ksync.send('message', data);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        console.error('Validation errors:', error.errors);
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Memory leaks" icon="memory">
+    Remove event listeners when components unmount:
+    
+    ```typescript
+    useEffect(() => {
+      const handler = (event) => { /* ... */ };
+      ksync.on('message', handler);
+      
+      return () => {
+        ksync.off('message', handler);
+      };
+    }, []);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Chat Application"
+    icon="message-circle"
+    href="/examples/chat-app"
+  >
+    Build a real-time chat application
+  </Card>
+  <Card
+    title="Todo Sync"
+    icon="check-square"
+    href="/examples/todo-sync"
+  >
+    Create a collaborative todo list
+  </Card>
+  <Card
+    title="AI Streaming"
+    icon="robot"
+    href="/examples/ai-streaming"
+  >
+    Implement AI chat with streaming
+  </Card>
+  <Card
+    title="Multiplayer Game"
+    icon="gamepad-2"
+    href="/examples/multiplayer-game"
+  >
+    Build a real-time multiplayer game
+  </Card>
+</CardGroup> 

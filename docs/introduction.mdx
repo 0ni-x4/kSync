@@ -1,0 +1,220 @@
+---
+title: Introduction
+description: 'Welcome to kSync - Schema-driven, Bun-native, real-time sync engine for blazing-fast web and AI apps'
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.png"
+  alt="Hero Light"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.png"
+  alt="Hero Dark"
+/>
+
+## What is kSync?
+
+kSync is a **schema-driven, Bun-native, real-time synchronization engine** designed for modern web and AI applications that need full control over event storage, tab synchronization, and backend integration — without the bloat.
+
+<CardGroup cols={2}>
+  <Card
+    title="Local-First Architecture"
+    icon="database"
+    href="/concepts/architecture"
+  >
+    Events are stored locally first, then synced in real-time across all clients
+  </Card>
+  <Card
+    title="Type-Safe with Zod"
+    icon="shield-check"
+    href="/concepts/events"
+  >
+    Full TypeScript support with runtime schema validation using Zod
+  </Card>
+  <Card
+    title="AI Streaming Support"
+    icon="robot"
+    href="/concepts/streaming"
+  >
+    Built-in streaming capabilities perfect for AI chat applications
+  </Card>
+  <Card
+    title="Multiplayer Ready"
+    icon="users"
+    href="/guides/multiplayer-games"
+  >
+    Presence tracking and real-time sync for 100+ concurrent users
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<AccordionGroup>
+  <Accordion title="🔒 Type-Safe TypeScript" icon="typescript">
+    Full TypeScript support with Zod schema validation ensures your data is always correct at runtime.
+  </Accordion>
+
+  <Accordion title="⚡ Built on Bun" icon="zap">
+    Leverages Bun's performance for blazing-fast event processing and WebSocket handling.
+  </Accordion>
+
+  <Accordion title="🧱 Event-Sourced Architecture" icon="blocks">
+    Append-only JSON event log with strict schema validation for reliable state management.
+  </Accordion>
+
+  <Accordion title="🌐 Real-time WebSocket Sync" icon="wifi">
+    Efficient WebSocket synchronization with automatic reconnection and heartbeat monitoring.
+  </Accordion>
+
+  <Accordion title="🧠 Smart Tab Coordination" icon="brain">
+    Leader election using Web Locks API with IndexedDB fallback for older browsers.
+  </Accordion>
+
+  <Accordion title="🔁 State Materialization" icon="refresh">
+    Transform events into queryable state with custom materializer functions.
+  </Accordion>
+
+  <Accordion title="💾 Local-First Storage" icon="hard-drive">
+    IndexedDB persistence with memory fallback for server environments.
+  </Accordion>
+
+  <Accordion title="🧪 Optimistic Updates" icon="flask">
+    Immediate local updates with conflict resolution and error handling.
+  </Accordion>
+</AccordionGroup>
+
+## Why Choose kSync?
+
+<Tabs>
+  <Tab title="Simple">
+    **A 15-year-old could understand and implement it**
+    
+    kSync's architecture is intentionally simple. Events go in, state comes out. No complex abstractions or hidden magic.
+  </Tab>
+  
+  <Tab title="Fast">
+    **Built on Bun with minimal overhead**
+    
+    Leverages Bun's native performance with efficient event batching, connection pooling, and optimized data structures.
+  </Tab>
+  
+  <Tab title="Local-First">
+    **Works offline, syncs when online**
+    
+    Your app continues working even when the network is down. Events are stored locally and synced when connectivity returns.
+  </Tab>
+  
+  <Tab title="Type-Safe">
+    **Full TypeScript support with runtime validation**
+    
+    Catch errors at compile time with TypeScript, and ensure data integrity at runtime with Zod schemas.
+  </Tab>
+  
+  <Tab title="Minimal">
+    **No bloat, just the essentials**
+    
+    Only includes what you need for real-time sync. No unnecessary dependencies or features you'll never use.
+  </Tab>
+</Tabs>
+
+## Quick Example
+
+Here's how simple it is to get started with kSync:
+
+```typescript
+import { z } from 'zod';
+import { ksync } from '@klastra/ksync';
+
+// Define your event schema
+ksync.defineSchema("message", z.object({
+  id: z.string(),
+  content: z.string(),
+  author: z.string(),
+  createdAt: z.number(),
+}));
+
+// Listen to events
+ksync.on("message", (event) => {
+  console.log(`New message: ${event.data.content}`);
+});
+
+// Send events (stored locally first, then synced)
+await ksync.send("message", {
+  id: "msg-1",
+  content: "Hello world!",
+  author: "Alice",
+  createdAt: Date.now(),
+});
+```
+
+## Use Cases
+
+kSync is perfect for:
+
+- **Real-time chat applications** with typing indicators and presence
+- **Collaborative editing tools** with conflict-free synchronization  
+- **AI-powered applications** with streaming responses
+- **Multiplayer games** with real-time player movement and state
+- **Offline-first mobile apps** with eventual consistency
+- **Dashboard applications** with live data updates
+
+## Getting Started
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start"
+    icon="play"
+    href="/quickstart"
+  >
+    Get up and running with kSync in under 5 minutes
+  </Card>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Install kSync and set up your development environment
+  </Card>
+  <Card
+    title="Core Concepts"
+    icon="lightbulb"
+    href="/concepts/architecture"
+  >
+    Understand the fundamental concepts behind kSync
+  </Card>
+  <Card
+    title="Examples"
+    icon="code"
+    href="/examples/introduction"
+  >
+    Explore real-world examples and use cases
+  </Card>
+</CardGroup>
+
+## Community & Support
+
+<CardGroup cols={3}>
+  <Card
+    title="GitHub"
+    icon="github"
+    href="https://github.com/klastra-ai/ksync"
+  >
+    Star us on GitHub and contribute to the project
+  </Card>
+  <Card
+    title="Discord"
+    icon="discord"
+    href="https://klastra.ai/discord"
+  >
+    Join our community for help and discussions
+  </Card>
+  <Card
+    title="Support"
+    icon="life-ring"
+    href="mailto:support@klastra.ai"
+  >
+    Get professional support for your project
+  </Card>
+</CardGroup> 

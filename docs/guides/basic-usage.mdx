@@ -1,0 +1,527 @@
+---
+title: 'Basic Usage'
+description: 'Learn the fundamentals of kSync with step-by-step examples'
+---
+
+## Getting Started
+
+This guide walks you through the core concepts of kSync with practical examples. By the end, you'll understand how to build event-driven applications with real-time synchronization.
+
+<Note>
+  Make sure you have kSync installed before starting. See the [Installation Guide](/installation) if you haven't already.
+</Note>
+
+## Step 1: Create Your First kSync Instance
+
+Start by creating a basic kSync instance:
+
+```typescript
+import { createKSync } from '@klastra/ksync';
+
+// Create a kSync instance
+const ksync = createKSync();
+
+// Initialize it
+await ksync.initialize();
+
+console.log('kSync is ready!');
+```
+
+This creates a kSync instance with default settings:
+- **Storage**: Automatically selected (IndexedDB in browsers, Memory in Node.js)
+- **Sync**: Disabled (local-only mode)
+- **Debug**: Disabled
+
+## Step 2: Define Event Schemas
+
+Before sending events, define their structure using Zod schemas:
+
+```typescript
+import { z } from 'zod';
+
+// Define a simple message schema
+const MessageSchema = z.object({
+  id: z.string(),
+  content: z.string().min(1, 'Message cannot be empty'),
+  author: z.string(),
+  timestamp: z.number(),
+});
+
+// Register the schema with kSync
+ksync.defineSchema('message', MessageSchema);
+```
+
+**Why schemas?**
+- **Type Safety**: Catch errors at compile time and runtime
+- **Validation**: Ensure data integrity
+- **Documentation**: Self-documenting event structure
+- **Evolution**: Handle schema changes gracefully
+
+## Step 3: Send Your First Event
+
+Now you can send type-safe events:
+
+```typescript
+// Send a message event
+await ksync.send('message', {
+  id: 'msg-1',
+  content: 'Hello, kSync!',
+  author: 'Alice',
+  timestamp: Date.now(),
+});
+
+console.log('Message sent!');
+```
+
+What happens when you send an event:
+1. **Validation**: Event data is validated against the schema
+2. **Storage**: Event is stored locally
+3. **Listeners**: Any event listeners are triggered
+4. **Sync**: Event is queued for synchronization (if enabled)
+
+## Step 4: Listen for Events
+
+Set up event listeners to react to events:
+
+```typescript
+// Listen for message events
+ksync.on('message', (event) => {
+  const { content, author, timestamp } = event.data;
+  console.log(`[${new Date(timestamp).toLocaleTimeString()}] ${author}: ${content}`);
+});
+
+// Now send another message to see the listener in action
+await ksync.send('message', {
+  id: 'msg-2',
+  content: 'This will trigger the listener!',
+  author: 'Bob',
+  timestamp: Date.now(),
+});
+```
+
+**Event Listener Features:**
+- **Type Safety**: Event data is fully typed
+- **Immediate**: Listeners are called immediately when events are sent
+- **Local**: Listeners respond to both local and remote events
+- **Flexible**: Multiple listeners can be registered for the same event type
+
+## Step 5: Create State from Events
+
+Use materializers to transform events into queryable state:
+
+```typescript
+// Define a materializer to create a list of messages
+ksync.defineMaterializer('messages', (events) => {
+  return events
+    .filter(event => event.type === 'message')
+    .map(event => event.data)
+    .sort((a, b) => a.timestamp - b.timestamp);
+});
+
+// Get the current state
+const messages = ksync.getState('messages');
+console.log('All messages:', messages);
+```
+
+**Materializers are powerful because:**
+- **Derived State**: State is computed from events, not stored separately
+- **Consistent**: State is always consistent with the event log
+- **Queryable**: You can create different views of the same data
+- **Reactive**: State updates automatically when new events arrive
+
+## Step 6: Handle Multiple Event Types
+
+Real applications need multiple event types:
+
+```typescript
+// Define schemas for different event types
+const UserJoinedSchema = z.object({
+  userId: z.string(),
+  username: z.string(),
+  timestamp: z.number(),
+});
+
+const UserLeftSchema = z.object({
+  userId: z.string(),
+  timestamp: z.number(),
+});
+
+// Register schemas
+ksync.defineSchema('user-joined', UserJoinedSchema);
+ksync.defineSchema('user-left', UserLeftSchema);
+
+// Set up listeners
+ksync.on('user-joined', (event) => {
+  console.log(`${event.data.username} joined the chat`);
+});
+
+ksync.on('user-left', (event) => {
+  console.log(`User ${event.data.userId} left the chat`);
+});
+
+// Create a comprehensive materializer
+ksync.defineMaterializer('chatState', (events) => {
+  const state = {
+    messages: [],
+    users: new Set(),
+    userCount: 0,
+  };
+
+  for (const event of events) {
+    switch (event.type) {
+      case 'message':
+        state.messages.push(event.data);
+        break;
+      case 'user-joined':
+        state.users.add(event.data.username);
+        break;
+      case 'user-left':
+        state.users.delete(event.data.userId);
+        break;
+    }
+  }
+
+  state.userCount = state.users.size;
+  state.messages.sort((a, b) => a.timestamp - b.timestamp);
+
+  return state;
+});
+
+// Test the system
+await ksync.send('user-joined', {
+  userId: 'user-1',
+  username: 'Alice',
+  timestamp: Date.now(),
+});
+
+await ksync.send('message', {
+  id: 'msg-3',
+  content: 'Hello everyone!',
+  author: 'Alice',
+  timestamp: Date.now(),
+});
+
+const chatState = ksync.getState('chatState');
+console.log('Chat state:', chatState);
+```
+
+## Step 7: Add Real-Time Synchronization
+
+To enable real-time sync across multiple clients, configure a server URL:
+
+```typescript
+// Create kSync with server configuration
+const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080',
+  debug: true, // Enable debug logging
+});
+
+await ksync.initialize();
+```
+
+<Warning>
+  You'll need a WebSocket server running. See the [Installation Guide](/installation#development-server-setup) for server setup instructions.
+</Warning>
+
+With sync enabled:
+- Events are automatically synchronized across all connected clients
+- Changes in one browser tab appear instantly in other tabs
+- Offline events are queued and synced when connection returns
+
+## Step 8: Error Handling
+
+Always handle errors gracefully:
+
+```typescript
+try {
+  await ksync.send('message', {
+    id: 'msg-4',
+    content: '', // This will fail validation (empty string)
+    author: 'Charlie',
+    timestamp: Date.now(),
+  });
+} catch (error) {
+  if (error instanceof z.ZodError) {
+    console.error('Validation error:', error.errors);
+  } else {
+    console.error('Unexpected error:', error);
+  }
+}
+
+// Handle connection errors
+ksync.on('error', (error) => {
+  console.error('kSync error:', error);
+});
+
+// Handle sync events
+ksync.on('connected', () => {
+  console.log('Connected to server');
+});
+
+ksync.on('disconnected', () => {
+  console.log('Disconnected from server');
+});
+```
+
+## Complete Example
+
+Here's a complete chat application that demonstrates all the concepts:
+
+```typescript
+import { z } from 'zod';
+import { createKSync } from '@klastra/ksync';
+
+// Schemas
+const MessageSchema = z.object({
+  id: z.string(),
+  content: z.string().min(1).max(1000),
+  author: z.string(),
+  timestamp: z.number(),
+});
+
+const UserJoinedSchema = z.object({
+  userId: z.string(),
+  username: z.string(),
+  timestamp: z.number(),
+});
+
+// Create kSync instance
+const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080', // Enable real-time sync
+  debug: true,
+});
+
+// Register schemas
+ksync.defineSchema('message', MessageSchema);
+ksync.defineSchema('user-joined', UserJoinedSchema);
+
+// Set up materializer
+ksync.defineMaterializer('chat', (events) => {
+  const messages = [];
+  const users = new Set();
+
+  for (const event of events) {
+    switch (event.type) {
+      case 'message':
+        messages.push(event.data);
+        break;
+      case 'user-joined':
+        users.add(event.data.username);
+        break;
+    }
+  }
+
+  return {
+    messages: messages.sort((a, b) => a.timestamp - b.timestamp),
+    users: Array.from(users),
+    userCount: users.size,
+  };
+});
+
+// Set up event listeners
+ksync.on('message', (event) => {
+  console.log(`💬 ${event.data.author}: ${event.data.content}`);
+  updateUI();
+});
+
+ksync.on('user-joined', (event) => {
+  console.log(`👋 ${event.data.username} joined`);
+  updateUI();
+});
+
+// UI update function
+function updateUI() {
+  const state = ksync.getState('chat');
+  console.log(`📊 ${state.userCount} users, ${state.messages.length} messages`);
+}
+
+// Initialize and start
+async function startChat() {
+  try {
+    await ksync.initialize();
+    console.log('✅ Chat initialized');
+
+    // Simulate user joining
+    await ksync.send('user-joined', {
+      userId: 'user-1',
+      username: 'Alice',
+      timestamp: Date.now(),
+    });
+
+    // Send a welcome message
+    await ksync.send('message', {
+      id: `msg-${Date.now()}`,
+      content: 'Welcome to kSync chat!',
+      author: 'Alice',
+      timestamp: Date.now(),
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to start chat:', error);
+  }
+}
+
+// Start the application
+startChat();
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Schema Design" icon="blueprint">
+    Design schemas for evolution and clarity:
+    
+    ```typescript
+    // ✅ Good - Clear, extensible schema
+    const MessageSchema = z.object({
+      id: z.string(),
+      content: z.string().max(2000),
+      author: z.string(),
+      timestamp: z.number(),
+      channelId: z.string().optional(), // Optional for future use
+      metadata: z.record(z.unknown()).optional(), // Extensible
+    });
+    
+    // ❌ Bad - Vague, inflexible schema
+    const MessageSchema = z.object({
+      data: z.any(), // Too generic
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Event Naming" icon="tag">
+    Use consistent, descriptive event names:
+    
+    ```typescript
+    // ✅ Good - Clear action-based names
+    'message-sent'
+    'user-joined-channel'
+    'file-upload-completed'
+    
+    // ❌ Bad - Vague or inconsistent
+    'message'
+    'user'
+    'fileUploaded'
+    ```
+  </Accordion>
+
+  <Accordion title="Error Handling" icon="exclamation-triangle">
+    Always handle errors gracefully:
+    
+    ```typescript
+    // Wrap event sending in try-catch
+    try {
+      await ksync.send('message', data);
+    } catch (error) {
+      // Handle validation errors
+      if (error instanceof z.ZodError) {
+        showValidationError(error.errors);
+      } else {
+        showGenericError('Failed to send message');
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Memory Management" icon="memory">
+    Clean up event listeners when done:
+    
+    ```typescript
+    // Store reference to handler
+    const messageHandler = (event) => { /* ... */ };
+    ksync.on('message', messageHandler);
+    
+    // Remove when component unmounts
+    ksync.off('message', messageHandler);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Common Patterns
+
+### Optimistic Updates
+
+Update the UI immediately, then handle failures:
+
+```typescript
+// Update UI optimistically
+addMessageToUI(messageData);
+
+try {
+  await ksync.send('message', messageData);
+} catch (error) {
+  // Revert on failure
+  removeMessageFromUI(messageData.id);
+  showError('Failed to send message');
+}
+```
+
+### Event Sourcing
+
+Use events to track all changes:
+
+```typescript
+// Instead of: user.status = 'online'
+await ksync.send('user-status-changed', {
+  userId: user.id,
+  oldStatus: user.status,
+  newStatus: 'online',
+  timestamp: Date.now(),
+});
+```
+
+### State Snapshots
+
+Create point-in-time state snapshots:
+
+```typescript
+ksync.defineMaterializer('userStats', (events) => {
+  const stats = { totalMessages: 0, activeUsers: new Set() };
+  
+  for (const event of events) {
+    if (event.type === 'message') {
+      stats.totalMessages++;
+      stats.activeUsers.add(event.data.author);
+    }
+  }
+  
+  return {
+    ...stats,
+    activeUserCount: stats.activeUsers.size,
+    generatedAt: Date.now(),
+  };
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Real-Time Sync"
+    icon="wifi"
+    href="/guides/real-time-sync"
+  >
+    Learn how to set up real-time synchronization
+  </Card>
+  <Card
+    title="AI Streaming"
+    icon="robot"
+    href="/guides/ai-streaming"
+  >
+    Build AI applications with streaming responses
+  </Card>
+  <Card
+    title="Performance"
+    icon="zap"
+    href="/guides/performance"
+  >
+    Optimize your kSync application
+  </Card>
+  <Card
+    title="Examples"
+    icon="code"
+    href="/examples/introduction"
+  >
+    Explore real-world examples
+  </Card>
+</CardGroup> 

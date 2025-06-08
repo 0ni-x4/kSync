@@ -1,0 +1,389 @@
+---
+title: 'Quickstart'
+description: 'Get up and running with kSync in under 5 minutes'
+---
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @klastra/ksync zod
+```
+
+```bash yarn
+yarn add @klastra/ksync zod
+```
+
+```bash pnpm
+pnpm add @klastra/ksync zod
+```
+
+```bash bun
+bun add @klastra/ksync zod
+```
+
+</CodeGroup>
+
+## Basic Setup
+
+Let's create a simple chat application to demonstrate kSync's core features.
+
+### 1. Define Your Event Schema
+
+First, define the structure of your events using Zod schemas:
+
+```typescript
+import { z } from 'zod';
+import { createKSync } from '@klastra/ksync';
+
+// Create a kSync instance
+const ksync = createKSync();
+
+// Define event schemas
+const MessageSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  author: z.string(),
+  createdAt: z.number(),
+});
+
+const UserJoinedSchema = z.object({
+  userId: z.string(),
+  username: z.string(),
+  timestamp: z.number(),
+});
+
+// Register schemas with kSync
+ksync.defineSchema('message', MessageSchema);
+ksync.defineSchema('user-joined', UserJoinedSchema);
+```
+
+### 2. Set Up Event Listeners
+
+Listen to events as they happen:
+
+```typescript
+// Listen for new messages
+ksync.on('message', (event) => {
+  const { content, author } = event.data;
+  console.log(`${author}: ${content}`);
+  
+  // Update your UI here
+  addMessageToUI(event.data);
+});
+
+// Listen for users joining
+ksync.on('user-joined', (event) => {
+  const { username } = event.data;
+  console.log(`${username} joined the chat`);
+  
+  // Update user list in UI
+  addUserToList(event.data);
+});
+```
+
+### 3. Create State Materializers
+
+Transform events into queryable state:
+
+```typescript
+interface ChatState {
+  messages: Array<{
+    id: string;
+    content: string;
+    author: string;
+    createdAt: number;
+  }>;
+  users: Set<string>;
+}
+
+ksync.defineMaterializer('chat', (events) => {
+  const state: ChatState = {
+    messages: [],
+    users: new Set(),
+  };
+
+  for (const event of events) {
+    switch (event.type) {
+      case 'message':
+        state.messages.push(event.data);
+        break;
+      case 'user-joined':
+        state.users.add(event.data.username);
+        break;
+    }
+  }
+
+  // Sort messages by creation time
+  state.messages.sort((a, b) => a.createdAt - b.createdAt);
+
+  return state;
+});
+```
+
+### 4. Initialize and Send Events
+
+```typescript
+async function startChat() {
+  // Initialize kSync
+  await ksync.initialize();
+
+  // Simulate a user joining
+  await ksync.send('user-joined', {
+    userId: 'user-1',
+    username: 'Alice',
+    timestamp: Date.now(),
+  });
+
+  // Send a message
+  await ksync.send('message', {
+    id: 'msg-1',
+    content: 'Hello everyone!',
+    author: 'Alice',
+    createdAt: Date.now(),
+  });
+
+  // Get current state
+  const chatState = ksync.getState('chat');
+  console.log('Current state:', chatState);
+}
+
+startChat();
+```
+
+## Adding Real-Time Sync
+
+To enable real-time synchronization across multiple clients:
+
+### 1. Start the Server
+
+<CodeGroup>
+
+```bash Terminal
+# Start the kSync WebSocket server
+bun run server/websocket-server.ts
+```
+
+```typescript server.ts
+// Or create your own server
+import { WebSocketServer } from 'ws';
+
+const wss = new WebSocketServer({ port: 8080 });
+
+wss.on('connection', (ws) => {
+  console.log('Client connected');
+  
+  ws.on('message', (data) => {
+    // Broadcast to all clients
+    wss.clients.forEach((client) => {
+      if (client !== ws && client.readyState === WebSocket.OPEN) {
+        client.send(data);
+      }
+    });
+  });
+});
+```
+
+</CodeGroup>
+
+### 2. Configure Client for Sync
+
+```typescript
+const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080',
+  debug: true, // Enable debug logging
+});
+
+// Initialize with sync enabled
+await ksync.initialize();
+```
+
+### 3. Test Multi-Client Sync
+
+Open multiple browser tabs or run multiple instances:
+
+```typescript
+// Client 1
+await ksync.send('message', {
+  id: 'msg-from-client-1',
+  content: 'Hello from client 1!',
+  author: 'Alice',
+  createdAt: Date.now(),
+});
+
+// Client 2 will automatically receive this message
+// and trigger the 'message' event listener
+```
+
+## Complete Example
+
+Here's a complete working example:
+
+<CodeGroup>
+
+```typescript chat.ts
+import { z } from 'zod';
+import { createKSync } from '@klastra/ksync';
+
+// Schemas
+const MessageSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  author: z.string(),
+  createdAt: z.number(),
+});
+
+// Create kSync instance with server connection
+const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080',
+  debug: true,
+});
+
+// Register schema
+ksync.defineSchema('message', MessageSchema);
+
+// Set up materializer
+ksync.defineMaterializer('messages', (events) => {
+  return events
+    .filter(e => e.type === 'message')
+    .map(e => e.data)
+    .sort((a, b) => a.createdAt - b.createdAt);
+});
+
+// Listen for messages
+ksync.on('message', (event) => {
+  console.log(`New message: ${event.data.content}`);
+  updateUI();
+});
+
+// Initialize
+async function init() {
+  await ksync.initialize();
+  console.log('Chat initialized!');
+}
+
+// Send message
+async function sendMessage(content: string, author: string) {
+  await ksync.send('message', {
+    id: `msg-${Date.now()}`,
+    content,
+    author,
+    createdAt: Date.now(),
+  });
+}
+
+// Get all messages
+function getMessages() {
+  return ksync.getState('messages');
+}
+
+// Start the app
+init();
+```
+
+```html index.html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>kSync Chat</title>
+</head>
+<body>
+  <div id="messages"></div>
+  <input type="text" id="messageInput" placeholder="Type a message...">
+  <button onclick="sendMessage()">Send</button>
+
+  <script type="module">
+    import { init, sendMessage, getMessages } from './chat.js';
+    
+    window.sendMessage = () => {
+      const input = document.getElementById('messageInput');
+      sendMessage(input.value, 'User');
+      input.value = '';
+    };
+
+    window.updateUI = () => {
+      const messages = getMessages();
+      const container = document.getElementById('messages');
+      container.innerHTML = messages
+        .map(msg => `<div><strong>${msg.author}:</strong> ${msg.content}</div>`)
+        .join('');
+    };
+  </script>
+</body>
+</html>
+```
+
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Core Concepts"
+    icon="lightbulb"
+    href="/concepts/architecture"
+  >
+    Learn about kSync's architecture and design principles
+  </Card>
+  <Card
+    title="Real-Time Sync Guide"
+    icon="wifi"
+    href="/guides/real-time-sync"
+  >
+    Deep dive into setting up real-time synchronization
+  </Card>
+  <Card
+    title="AI Streaming"
+    icon="robot"
+    href="/guides/ai-streaming"
+  >
+    Build AI applications with streaming responses
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/ksync-class"
+  >
+    Explore the complete API documentation
+  </Card>
+</CardGroup>
+
+## Common Patterns
+
+<AccordionGroup>
+  <Accordion title="Optimistic Updates" icon="zap">
+    ```typescript
+    // Send event immediately (optimistic update)
+    await ksync.send('message', messageData);
+    
+    // UI updates immediately via event listener
+    // If sync fails, you can handle it in error callbacks
+    ```
+  </Accordion>
+
+  <Accordion title="Offline Support" icon="wifi-slash">
+    ```typescript
+    // Events are stored locally even when offline
+    await ksync.send('message', messageData);
+    
+    // When connection returns, events sync automatically
+    ksync.on('sync-complete', () => {
+      console.log('All offline events synced!');
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Type Safety" icon="shield">
+    ```typescript
+    // TypeScript will catch errors at compile time
+    await ksync.send('message', {
+      id: 'msg-1',
+      content: 'Hello',
+      author: 'Alice',
+      // createdAt: 'invalid' // ❌ TypeScript error
+      createdAt: Date.now() // ✅ Correct
+    });
+    ```
+  </Accordion>
+</AccordionGroup> 

@@ -1,0 +1,419 @@
+---
+title: 'Installation'
+description: 'Install kSync and set up your development environment'
+---
+
+## Prerequisites
+
+Before installing kSync, make sure you have:
+
+<CardGroup cols={2}>
+  <Card title="Node.js 18+" icon="node-js">
+    kSync requires Node.js 18 or higher for modern JavaScript features
+  </Card>
+  <Card title="TypeScript (Recommended)" icon="typescript">
+    While not required, TypeScript provides the best development experience
+  </Card>
+</CardGroup>
+
+## Package Installation
+
+<Tabs>
+  <Tab title="npm">
+    ```bash
+    npm install @klastra/ksync zod
+    ```
+  </Tab>
+  
+  <Tab title="yarn">
+    ```bash
+    yarn add @klastra/ksync zod
+    ```
+  </Tab>
+  
+  <Tab title="pnpm">
+    ```bash
+    pnpm add @klastra/ksync zod
+    ```
+  </Tab>
+  
+  <Tab title="bun">
+    ```bash
+    bun add @klastra/ksync zod
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  **Why Zod?** kSync uses Zod for runtime schema validation, ensuring your events are type-safe both at compile time and runtime.
+</Note>
+
+## TypeScript Configuration
+
+If you're using TypeScript, add these settings to your `tsconfig.json`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}
+```
+
+## Environment Setup
+
+### Browser Environment
+
+For browser applications, no additional setup is required. kSync automatically uses:
+
+- **IndexedDB** for local storage
+- **Web Locks API** for tab coordination (with IndexedDB fallback)
+- **WebSocket** for real-time sync
+
+```typescript
+import { createKSync } from '@klastra/ksync';
+
+const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080', // Your WebSocket server
+  storage: 'indexeddb', // Default for browsers
+});
+```
+
+### Node.js Environment
+
+For server-side or Node.js applications:
+
+```typescript
+import { createKSync } from '@klastra/ksync';
+import { MemoryStorage } from '@klastra/ksync';
+
+const ksync = createKSync({
+  storage: 'memory', // Use memory storage for servers
+});
+```
+
+### Bun Environment
+
+kSync is optimized for Bun and works out of the box:
+
+```typescript
+import { createKSync } from '@klastra/ksync';
+
+const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080',
+});
+
+await ksync.initialize();
+```
+
+## Development Server Setup
+
+### Option 1: Use Built-in Server
+
+kSync comes with a ready-to-use WebSocket server:
+
+```bash
+# Clone the repository (for development)
+git clone https://github.com/klastra-ai/ksync.git
+cd ksync
+
+# Install dependencies
+bun install
+
+# Start the development server
+bun run server/websocket-server.ts
+```
+
+### Option 2: Custom Server
+
+Create your own WebSocket server:
+
+<CodeGroup>
+
+```typescript server.ts
+import { WebSocketServer } from 'ws';
+
+const wss = new WebSocketServer({ port: 8080 });
+
+console.log('🚀 kSync server running on ws://localhost:8080');
+
+wss.on('connection', (ws) => {
+  console.log('📱 Client connected');
+
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data.toString());
+      
+      // Broadcast to all other clients
+      wss.clients.forEach((client) => {
+        if (client !== ws && client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(message));
+        }
+      });
+    } catch (error) {
+      console.error('❌ Invalid message:', error);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('📱 Client disconnected');
+  });
+});
+```
+
+```typescript server-bun.ts
+// Bun-native WebSocket server
+const server = Bun.serve({
+  port: 8080,
+  fetch(req, server) {
+    if (server.upgrade(req)) {
+      return; // do not return a Response
+    }
+    return new Response("Upgrade failed", { status: 500 });
+  },
+  websocket: {
+    message(ws, message) {
+      // Broadcast to all clients
+      ws.publish("global", message);
+    },
+    open(ws) {
+      ws.subscribe("global");
+      console.log("📱 Client connected");
+    },
+    close(ws) {
+      console.log("📱 Client disconnected");
+    },
+  },
+});
+
+console.log(`🚀 kSync server running on ws://localhost:${server.port}`);
+```
+
+</CodeGroup>
+
+## Verification
+
+Test your installation with this simple script:
+
+```typescript test.ts
+import { z } from 'zod';
+import { createKSync } from '@klastra/ksync';
+
+// Create kSync instance
+const ksync = createKSync();
+
+// Define a test schema
+ksync.defineSchema('test', z.object({
+  message: z.string(),
+  timestamp: z.number(),
+}));
+
+// Set up listener
+ksync.on('test', (event) => {
+  console.log('✅ Received event:', event.data);
+});
+
+// Test the setup
+async function test() {
+  await ksync.initialize();
+  
+  await ksync.send('test', {
+    message: 'Hello kSync!',
+    timestamp: Date.now(),
+  });
+  
+  console.log('🎉 kSync is working correctly!');
+}
+
+test().catch(console.error);
+```
+
+Run the test:
+
+<CodeGroup>
+
+```bash Node.js
+node test.ts
+```
+
+```bash Bun
+bun run test.ts
+```
+
+```bash TypeScript
+npx tsx test.ts
+```
+
+</CodeGroup>
+
+Expected output:
+```
+✅ Received event: { message: 'Hello kSync!', timestamp: 1703123456789 }
+🎉 kSync is working correctly!
+```
+
+## Framework Integration
+
+### React
+
+```typescript useKSync.ts
+import { useEffect, useState } from 'react';
+import { createKSync } from '@klastra/ksync';
+
+const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080',
+});
+
+export function useKSync() {
+  const [isConnected, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    ksync.initialize().then(() => {
+      setIsConnected(true);
+    });
+
+    return () => {
+      ksync.disconnect();
+    };
+  }, []);
+
+  return { ksync, isConnected };
+}
+```
+
+### Vue
+
+```typescript composables/useKSync.ts
+import { ref, onMounted, onUnmounted } from 'vue';
+import { createKSync } from '@klastra/ksync';
+
+export function useKSync() {
+  const ksync = createKSync({
+    serverUrl: 'ws://localhost:8080',
+  });
+  
+  const isConnected = ref(false);
+
+  onMounted(async () => {
+    await ksync.initialize();
+    isConnected.value = true;
+  });
+
+  onUnmounted(() => {
+    ksync.disconnect();
+  });
+
+  return { ksync, isConnected };
+}
+```
+
+### Svelte
+
+```typescript stores/ksync.ts
+import { writable } from 'svelte/store';
+import { createKSync } from '@klastra/ksync';
+
+export const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080',
+});
+
+export const isConnected = writable(false);
+
+// Initialize on import
+ksync.initialize().then(() => {
+  isConnected.set(true);
+});
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Module not found errors" icon="exclamation-triangle">
+    Make sure you have the correct import paths:
+    
+    ```typescript
+    // ✅ Correct
+    import { createKSync } from '@klastra/ksync';
+    
+    // ❌ Incorrect
+    import { createKSync } from 'ksync';
+    ```
+  </Accordion>
+
+  <Accordion title="WebSocket connection fails" icon="wifi-slash">
+    Check that your server is running and accessible:
+    
+    ```bash
+    # Test WebSocket connection
+    curl -i -N -H "Connection: Upgrade" \
+         -H "Upgrade: websocket" \
+         -H "Sec-WebSocket-Key: test" \
+         -H "Sec-WebSocket-Version: 13" \
+         http://localhost:8080/
+    ```
+  </Accordion>
+
+  <Accordion title="TypeScript errors" icon="code">
+    Ensure you have the correct TypeScript configuration:
+    
+    ```json
+    {
+      "compilerOptions": {
+        "moduleResolution": "node",
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Browser compatibility" icon="browser">
+    kSync requires modern browser features:
+    
+    - **IndexedDB** (supported in all modern browsers)
+    - **WebSocket** (supported in all modern browsers)
+    - **Web Locks API** (Chrome 69+, Firefox 96+, Safari 15.4+)
+    
+    For older browsers, kSync automatically falls back to IndexedDB for tab coordination.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Build your first kSync application in 5 minutes
+  </Card>
+  <Card
+    title="Core Concepts"
+    icon="lightbulb"
+    href="/concepts/architecture"
+  >
+    Understand how kSync works under the hood
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/ksync-class"
+  >
+    Explore the complete API documentation
+  </Card>
+  <Card
+    title="Examples"
+    icon="play"
+    href="/examples/introduction"
+  >
+    See kSync in action with real-world examples
+  </Card>
+</CardGroup> 
