@@ -1,0 +1,70 @@
+{
+  "name": "@klastra/ksync",
+  "version": "0.1.0",
+  "description": "Schema-driven, Bun-native, real-time sync engine for local-first apps",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "module": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node && tsc -p tsconfig.build.json",
+    "build:bun": "bun build src/index.ts --outdir dist --target node",
+    "build:types": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "example:basic": "bun run examples/basic.ts",
+    "example:sync": "bun run examples/sync.ts",
+    "server": "bun run server/websocket-server.ts",
+    "prepublishOnly": "npm run clean && npm run build",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "sync",
+    "real-time",
+    "local-first",
+    "event-sourcing",
+    "websocket",
+    "offline-first",
+    "typescript",
+    "bun",
+    "indexeddb",
+    "collaboration"
+  ],
+  "author": "Klastra Labs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/klastra-ai/ksync.git"
+  },
+  "homepage": "https://github.com/klastra-ai/ksync#readme",
+  "bugs": {
+    "url": "https://github.com/klastra-ai/ksync/issues"
+  },
+  "dependencies": {
+    "zod": "^3.22.4",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.8",
+    "bun-types": "latest"
+  },
+  "peerDependencies": {
+    "drizzle-orm": "^0.29.0"
+  },
+  "peerDependenciesMeta": {
+    "drizzle-orm": {
+      "optional": true
+    }
+  }
+} 
