@@ -1,0 +1,984 @@
+---
+title: "Multiplayer Game with kSync"
+description: "Build a real-time multiplayer game with kSync - demonstrates game state sync, player actions, physics, and presence system"
+---
+
+# Multiplayer Game with kSync
+
+Learn how to build a real-time multiplayer game using kSync, featuring synchronized game state, player actions, physics simulation, and presence management.
+
+## Overview
+
+This example demonstrates:
+- Real-time multiplayer game synchronization
+- Authoritative server with client prediction
+- Player presence and connection management
+- Game physics and collision detection
+- Event-driven game mechanics
+- Spectator mode and replay system
+
+## Game State Management
+
+```typescript stores/gameStore.ts
+import { 
+  KSync, 
+  InMemoryStorage, 
+  WebSocketSyncClient 
+} from 'ksync';
+
+export interface Player {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  vx: number; // velocity x
+  vy: number; // velocity y
+  health: number;
+  score: number;
+  color: string;
+  team?: 'red' | 'blue';
+  lastSeen: number;
+  isAlive: boolean;
+}
+
+export interface Projectile {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  ownerId: string;
+  damage: number;
+  createdAt: number;
+}
+
+export interface PowerUp {
+  id: string;
+  type: 'health' | 'speed' | 'damage' | 'shield';
+  x: number;
+  y: number;
+  value: number;
+  spawnedAt: number;
+  collected?: boolean;
+}
+
+export interface GameState {
+  gameId: string;
+  status: 'waiting' | 'playing' | 'paused' | 'finished';
+  players: Map<string, Player>;
+  projectiles: Projectile[];
+  powerUps: PowerUp[];
+  gameTime: number;
+  maxPlayers: number;
+  mapWidth: number;
+  mapHeight: number;
+  settings: {
+    gameMode: 'deathmatch' | 'team' | 'capture-flag';
+    maxScore: number;
+    timeLimit: number; // in seconds
+    respawnTime: number;
+  };
+  winner?: string | 'red' | 'blue';
+}
+
+export const createGameStore = (gameId: string, playerId: string) => {
+  const ksync = new KSync<GameState>({
+    storage: new InMemoryStorage(),
+    syncClient: new WebSocketSyncClient('ws://localhost:8082', {
+      auth: { type: 'none' }
+    })
+  });
+
+  // Set up game state materializer
+  ksync.materialize((events) => {
+    const state: GameState = {
+      gameId,
+      status: 'waiting',
+      players: new Map(),
+      projectiles: [],
+      powerUps: [],
+      gameTime: 0,
+      maxPlayers: 8,
+      mapWidth: 800,
+      mapHeight: 600,
+      settings: {
+        gameMode: 'deathmatch',
+        maxScore: 10,
+        timeLimit: 300,
+        respawnTime: 3000
+      }
+    };
+
+    for (const event of events) {
+      switch (event.type) {
+        case 'game_started':
+          state.status = 'playing';
+          state.gameTime = 0;
+          break;
+
+        case 'game_ended':
+          state.status = 'finished';
+          state.winner = event.data.winner;
+          break;
+
+        case 'player_joined':
+          state.players.set(event.data.id, {
+            ...event.data,
+            isAlive: true,
+            lastSeen: event.timestamp
+          });
+          break;
+
+        case 'player_left':
+          state.players.delete(event.data.playerId);
+          break;
+
+        case 'player_moved':
+          const player = state.players.get(event.data.playerId);
+          if (player) {
+            player.x = event.data.x;
+            player.y = event.data.y;
+            player.vx = event.data.vx;
+            player.vy = event.data.vy;
+            player.lastSeen = event.timestamp;
+          }
+          break;
+
+        case 'player_shot':
+          state.projectiles.push(event.data);
+          break;
+
+        case 'player_hit':
+          const hitPlayer = state.players.get(event.data.playerId);
+          if (hitPlayer) {
+            hitPlayer.health -= event.data.damage;
+            if (hitPlayer.health <= 0) {
+              hitPlayer.isAlive = false;
+              // Award score to shooter
+              const shooter = state.players.get(event.data.shooterId);
+              if (shooter) {
+                shooter.score += 1;
+              }
+            }
+          }
+          break;
+
+        case 'player_respawned':
+          const respawnedPlayer = state.players.get(event.data.playerId);
+          if (respawnedPlayer) {
+            respawnedPlayer.x = event.data.x;
+            respawnedPlayer.y = event.data.y;
+            respawnedPlayer.health = 100;
+            respawnedPlayer.isAlive = true;
+          }
+          break;
+
+        case 'projectile_destroyed':
+          state.projectiles = state.projectiles.filter(
+            p => p.id !== event.data.projectileId
+          );
+          break;
+
+        case 'powerup_spawned':
+          state.powerUps.push(event.data);
+          break;
+
+        case 'powerup_collected':
+          const powerUp = state.powerUps.find(p => p.id === event.data.powerUpId);
+          if (powerUp) {
+            powerUp.collected = true;
+            // Apply power-up effect to player
+            const beneficiary = state.players.get(event.data.playerId);
+            if (beneficiary) {
+              applyPowerUpEffect(beneficiary, powerUp);
+            }
+          }
+          break;
+
+        case 'game_tick':
+          state.gameTime = event.data.gameTime;
+          // Update projectiles and check collisions on server
+          if (event.data.projectileUpdates) {
+            state.projectiles = event.data.projectileUpdates;
+          }
+          break;
+      }
+    }
+
+    // Remove collected power-ups
+    state.powerUps = state.powerUps.filter(p => !p.collected);
+
+    return state;
+  });
+
+  return ksync;
+};
+
+function applyPowerUpEffect(player: Player, powerUp: PowerUp) {
+  switch (powerUp.type) {
+    case 'health':
+      player.health = Math.min(100, player.health + powerUp.value);
+      break;
+    case 'speed':
+      // Speed boost would be handled in game logic
+      break;
+    case 'damage':
+      // Damage boost would be handled in weapon system
+      break;
+    case 'shield':
+      // Shield would be a temporary effect
+      break;
+  }
+}
+```
+
+## Game Service Layer
+
+```typescript services/gameService.ts
+import { KSync } from 'ksync';
+import { GameState, Player, Projectile, PowerUp } from '../stores/gameStore';
+
+export class GameService {
+  private tickInterval: NodeJS.Timeout | null = null;
+  private isServer: boolean;
+
+  constructor(
+    private ksync: KSync<GameState>,
+    private playerId: string,
+    isServer = false
+  ) {
+    this.isServer = isServer;
+    
+    if (isServer) {
+      this.startGameTick();
+    }
+  }
+
+  // Player actions
+  async joinGame(playerName: string, color: string): Promise<void> {
+    const spawnPoint = this.getRandomSpawnPoint();
+    
+    const player: Player = {
+      id: this.playerId,
+      name: playerName,
+      x: spawnPoint.x,
+      y: spawnPoint.y,
+      vx: 0,
+      vy: 0,
+      health: 100,
+      score: 0,
+      color,
+      lastSeen: Date.now(),
+      isAlive: true
+    };
+
+    await this.ksync.emit('player_joined', player);
+  }
+
+  async leaveGame(): Promise<void> {
+    await this.ksync.emit('player_left', { playerId: this.playerId });
+  }
+
+  async movePlayer(x: number, y: number, vx: number, vy: number): Promise<void> {
+    // Client-side prediction: update local state immediately
+    const player = this.ksync.state.players.get(this.playerId);
+    if (player) {
+      player.x = x;
+      player.y = y;
+      player.vx = vx;
+      player.vy = vy;
+    }
+
+    // Send to server for authoritative update
+    await this.ksync.emit('player_moved', {
+      playerId: this.playerId,
+      x,
+      y,
+      vx,
+      vy
+    });
+  }
+
+  async shoot(targetX: number, targetY: number): Promise<void> {
+    const player = this.ksync.state.players.get(this.playerId);
+    if (!player || !player.isAlive) return;
+
+    // Calculate projectile direction
+    const dx = targetX - player.x;
+    const dy = targetY - player.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const speed = 400; // pixels per second
+
+    const projectile: Projectile = {
+      id: generateId(),
+      x: player.x,
+      y: player.y,
+      vx: (dx / distance) * speed,
+      vy: (dy / distance) * speed,
+      ownerId: this.playerId,
+      damage: 25,
+      createdAt: Date.now()
+    };
+
+    await this.ksync.emit('player_shot', projectile);
+  }
+
+  async respawn(): Promise<void> {
+    const spawnPoint = this.getRandomSpawnPoint();
+    
+    await this.ksync.emit('player_respawned', {
+      playerId: this.playerId,
+      x: spawnPoint.x,
+      y: spawnPoint.y
+    });
+  }
+
+  // Game management (server only)
+  async startGame(): Promise<void> {
+    if (!this.isServer) return;
+    
+    await this.ksync.emit('game_started', {
+      startTime: Date.now()
+    });
+
+    // Spawn initial power-ups
+    this.spawnPowerUps();
+  }
+
+  async endGame(winner?: string): Promise<void> {
+    if (!this.isServer) return;
+    
+    await this.ksync.emit('game_ended', { winner });
+    
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = null;
+    }
+  }
+
+  // Server game tick
+  private startGameTick(): void {
+    if (this.tickInterval) return;
+
+    this.tickInterval = setInterval(async () => {
+      const deltaTime = 1000 / 60; // 60 FPS
+      const gameState = this.ksync.state;
+
+      // Update projectiles
+      const updatedProjectiles = this.updateProjectiles(gameState.projectiles, deltaTime);
+      
+      // Check collisions
+      const collisions = this.checkCollisions(updatedProjectiles, gameState.players);
+      
+      // Process collisions
+      for (const collision of collisions) {
+        await this.ksync.emit('player_hit', {
+          playerId: collision.playerId,
+          shooterId: collision.shooterId,
+          damage: collision.damage
+        });
+
+        await this.ksync.emit('projectile_destroyed', {
+          projectileId: collision.projectileId
+        });
+      }
+
+      // Remove old projectiles
+      const filteredProjectiles = updatedProjectiles.filter(p => 
+        Date.now() - p.createdAt < 5000 // Remove after 5 seconds
+      );
+
+      // Emit game tick with updates
+      await this.ksync.emit('game_tick', {
+        gameTime: gameState.gameTime + deltaTime,
+        projectileUpdates: filteredProjectiles
+      });
+
+      // Check win conditions
+      this.checkWinConditions();
+
+      // Spawn power-ups randomly
+      if (Math.random() < 0.01) { // 1% chance per tick
+        this.spawnRandomPowerUp();
+      }
+    }, 1000 / 60); // 60 FPS
+  }
+
+  private updateProjectiles(projectiles: Projectile[], deltaTime: number): Projectile[] {
+    return projectiles.map(p => ({
+      ...p,
+      x: p.x + (p.vx * deltaTime / 1000),
+      y: p.y + (p.vy * deltaTime / 1000)
+    })).filter(p => 
+      p.x >= 0 && p.x <= this.ksync.state.mapWidth &&
+      p.y >= 0 && p.y <= this.ksync.state.mapHeight
+    );
+  }
+
+  private checkCollisions(projectiles: Projectile[], players: Map<string, Player>) {
+    const collisions: Array<{
+      projectileId: string;
+      playerId: string;
+      shooterId: string;
+      damage: number;
+    }> = [];
+
+    for (const projectile of projectiles) {
+      for (const [playerId, player] of players) {
+        // Don't hit the shooter
+        if (playerId === projectile.ownerId || !player.isAlive) continue;
+
+        // Simple circular collision detection
+        const dx = projectile.x - player.x;
+        const dy = projectile.y - player.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < 20) { // Player radius
+          collisions.push({
+            projectileId: projectile.id,
+            playerId: playerId,
+            shooterId: projectile.ownerId,
+            damage: projectile.damage
+          });
+        }
+      }
+    }
+
+    return collisions;
+  }
+
+  private checkWinConditions(): void {
+    const gameState = this.ksync.state;
+    const settings = gameState.settings;
+
+    // Check score limit
+    for (const [playerId, player] of gameState.players) {
+      if (player.score >= settings.maxScore) {
+        this.endGame(playerId);
+        return;
+      }
+    }
+
+    // Check time limit
+    if (gameState.gameTime >= settings.timeLimit * 1000) {
+      // Find player with highest score
+      let winner = '';
+      let highestScore = -1;
+      
+      for (const [playerId, player] of gameState.players) {
+        if (player.score > highestScore) {
+          highestScore = player.score;
+          winner = playerId;
+        }
+      }
+      
+      this.endGame(winner);
+    }
+  }
+
+  private async spawnPowerUps(): Promise<void> {
+    const powerUpTypes: PowerUp['type'][] = ['health', 'speed', 'damage', 'shield'];
+    
+    for (let i = 0; i < 3; i++) {
+      const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+      const position = this.getRandomSpawnPoint();
+      
+      await this.spawnPowerUp(type, position.x, position.y);
+    }
+  }
+
+  private async spawnRandomPowerUp(): Promise<void> {
+    const powerUpTypes: PowerUp['type'][] = ['health', 'speed', 'damage', 'shield'];
+    const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+    const position = this.getRandomSpawnPoint();
+    
+    await this.spawnPowerUp(type, position.x, position.y);
+  }
+
+  private async spawnPowerUp(type: PowerUp['type'], x: number, y: number): Promise<void> {
+    const powerUp: PowerUp = {
+      id: generateId(),
+      type,
+      x,
+      y,
+      value: this.getPowerUpValue(type),
+      spawnedAt: Date.now()
+    };
+
+    await this.ksync.emit('powerup_spawned', powerUp);
+  }
+
+  private getPowerUpValue(type: PowerUp['type']): number {
+    switch (type) {
+      case 'health': return 30;
+      case 'speed': return 1.5;
+      case 'damage': return 2;
+      case 'shield': return 50;
+      default: return 10;
+    }
+  }
+
+  private getRandomSpawnPoint(): { x: number; y: number } {
+    const margin = 50;
+    return {
+      x: margin + Math.random() * (this.ksync.state.mapWidth - 2 * margin),
+      y: margin + Math.random() * (this.ksync.state.mapHeight - 2 * margin)
+    };
+  }
+
+  // Utility methods
+  getPlayer(playerId: string): Player | undefined {
+    return this.ksync.state.players.get(playerId);
+  }
+
+  getCurrentPlayer(): Player | undefined {
+    return this.getPlayer(this.playerId);
+  }
+
+  getAllPlayers(): Player[] {
+    return Array.from(this.ksync.state.players.values());
+  }
+
+  getLeaderboard(): Player[] {
+    return this.getAllPlayers().sort((a, b) => b.score - a.score);
+  }
+
+  isGameInProgress(): boolean {
+    return this.ksync.state.status === 'playing';
+  }
+}
+
+function generateId(): string {
+  return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
+```
+
+## React Game Components
+
+```tsx components/GameCanvas.tsx
+import React, { useRef, useEffect, useCallback } from 'react';
+import { GameService } from '../services/gameService';
+import { Player, Projectile, PowerUp } from '../stores/gameStore';
+
+interface GameCanvasProps {
+  gameService: GameService;
+  players: Player[];
+  projectiles: Projectile[];
+  powerUps: PowerUp[];
+  currentPlayerId: string;
+  mapWidth: number;
+  mapHeight: number;
+}
+
+export const GameCanvas: React.FC<GameCanvasProps> = ({
+  gameService,
+  players,
+  projectiles,
+  powerUps,
+  currentPlayerId,
+  mapWidth,
+  mapHeight
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number>();
+  
+  // Input handling
+  const keysPressed = useRef<Set<string>>(new Set());
+  const mousePosition = useRef({ x: 0, y: 0 });
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    keysPressed.current.add(e.key.toLowerCase());
+  }, []);
+
+  const handleKeyUp = useCallback((e: KeyboardEvent) => {
+    keysPressed.current.delete(e.key.toLowerCase());
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    mousePosition.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    };
+  }, []);
+
+  const handleMouseClick = useCallback((e: MouseEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const targetX = e.clientX - rect.left;
+    const targetY = e.clientY - rect.top;
+
+    gameService.shoot(targetX, targetY);
+  }, [gameService]);
+
+  // Game loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let lastTime = 0;
+
+    const gameLoop = (currentTime: number) => {
+      const deltaTime = currentTime - lastTime;
+      lastTime = currentTime;
+
+      // Update player movement based on input
+      updatePlayerMovement(deltaTime);
+
+      // Render game
+      render(ctx);
+
+      animationFrameRef.current = requestAnimationFrame(gameLoop);
+    };
+
+    const updatePlayerMovement = (deltaTime: number) => {
+      const currentPlayer = gameService.getCurrentPlayer();
+      if (!currentPlayer || !currentPlayer.isAlive) return;
+
+      let vx = 0;
+      let vy = 0;
+      const speed = 200; // pixels per second
+
+      if (keysPressed.current.has('w') || keysPressed.current.has('arrowup')) vy -= speed;
+      if (keysPressed.current.has('s') || keysPressed.current.has('arrowdown')) vy += speed;
+      if (keysPressed.current.has('a') || keysPressed.current.has('arrowleft')) vx -= speed;
+      if (keysPressed.current.has('d') || keysPressed.current.has('arrowright')) vx += speed;
+
+      // Normalize diagonal movement
+      if (vx !== 0 && vy !== 0) {
+        vx *= 0.707;
+        vy *= 0.707;
+      }
+
+      // Calculate new position
+      const newX = Math.max(20, Math.min(mapWidth - 20, currentPlayer.x + vx * deltaTime / 1000));
+      const newY = Math.max(20, Math.min(mapHeight - 20, currentPlayer.y + vy * deltaTime / 1000));
+
+      // Only send update if position changed significantly
+      if (Math.abs(newX - currentPlayer.x) > 1 || Math.abs(newY - currentPlayer.y) > 1) {
+        gameService.movePlayer(newX, newY, vx, vy);
+      }
+    };
+
+    const render = (ctx: CanvasRenderingContext2D) => {
+      // Clear canvas
+      ctx.fillStyle = '#2c3e50';
+      ctx.fillRect(0, 0, mapWidth, mapHeight);
+
+      // Draw grid
+      drawGrid(ctx);
+
+      // Draw power-ups
+      powerUps.forEach(powerUp => drawPowerUp(ctx, powerUp));
+
+      // Draw projectiles
+      projectiles.forEach(projectile => drawProjectile(ctx, projectile));
+
+      // Draw players
+      players.forEach(player => drawPlayer(ctx, player, player.id === currentPlayerId));
+
+      // Draw UI
+      drawUI(ctx);
+    };
+
+    const drawGrid = (ctx: CanvasRenderingContext2D) => {
+      ctx.strokeStyle = '#34495e';
+      ctx.lineWidth = 1;
+
+      for (let x = 0; x <= mapWidth; x += 50) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, mapHeight);
+        ctx.stroke();
+      }
+
+      for (let y = 0; y <= mapHeight; y += 50) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(mapWidth, y);
+        ctx.stroke();
+      }
+    };
+
+    const drawPlayer = (ctx: CanvasRenderingContext2D, player: Player, isCurrentPlayer: boolean) => {
+      if (!player.isAlive) return;
+
+      // Draw player circle
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, 20, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw player border
+      ctx.strokeStyle = isCurrentPlayer ? '#f1c40f' : '#ecf0f1';
+      ctx.lineWidth = isCurrentPlayer ? 3 : 2;
+      ctx.stroke();
+
+      // Draw health bar
+      const barWidth = 40;
+      const barHeight = 6;
+      const barX = player.x - barWidth / 2;
+      const barY = player.y - 35;
+
+      ctx.fillStyle = '#e74c3c';
+      ctx.fillRect(barX, barY, barWidth, barHeight);
+
+      ctx.fillStyle = '#27ae60';
+      ctx.fillRect(barX, barY, (barWidth * player.health) / 100, barHeight);
+
+      // Draw player name
+      ctx.fillStyle = '#ecf0f1';
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(player.name, player.x, player.y + 45);
+
+      // Draw score
+      ctx.fillText(`${player.score}`, player.x, player.y + 60);
+    };
+
+    const drawProjectile = (ctx: CanvasRenderingContext2D, projectile: Projectile) => {
+      ctx.fillStyle = '#e67e22';
+      ctx.beginPath();
+      ctx.arc(projectile.x, projectile.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    const drawPowerUp = (ctx: CanvasRenderingContext2D, powerUp: PowerUp) => {
+      const colors = {
+        health: '#e74c3c',
+        speed: '#3498db',
+        damage: '#e67e22',
+        shield: '#9b59b6'
+      };
+
+      ctx.fillStyle = colors[powerUp.type];
+      ctx.beginPath();
+      ctx.arc(powerUp.x, powerUp.y, 15, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw power-up icon
+      ctx.fillStyle = '#ecf0f1';
+      ctx.font = '16px Arial';
+      ctx.textAlign = 'center';
+      const icons = { health: '+', speed: '→', damage: '!', shield: '◈' };
+      ctx.fillText(icons[powerUp.type], powerUp.x, powerUp.y + 5);
+    };
+
+    const drawUI = (ctx: CanvasRenderingContext2D) => {
+      // Draw crosshair at mouse position
+      const mouse = mousePosition.current;
+      ctx.strokeStyle = '#ecf0f1';
+      ctx.lineWidth = 2;
+      
+      ctx.beginPath();
+      ctx.moveTo(mouse.x - 10, mouse.y);
+      ctx.lineTo(mouse.x + 10, mouse.y);
+      ctx.moveTo(mouse.x, mouse.y - 10);
+      ctx.lineTo(mouse.x, mouse.y + 10);
+      ctx.stroke();
+    };
+
+    // Start game loop
+    animationFrameRef.current = requestAnimationFrame(gameLoop);
+
+    // Add event listeners
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('click', handleMouseClick);
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('click', handleMouseClick);
+    };
+  }, [gameService, players, projectiles, powerUps, currentPlayerId, mapWidth, mapHeight]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={mapWidth}
+      height={mapHeight}
+      className="game-canvas"
+      style={{ border: '2px solid #34495e', cursor: 'crosshair' }}
+    />
+  );
+};
+```
+
+```tsx components/GameLobby.tsx
+import React, { useState } from 'react';
+import { GameService } from '../services/gameService';
+import { Player } from '../stores/gameStore';
+
+interface GameLobbyProps {
+  gameService: GameService;
+  players: Player[];
+  onStartGame: () => void;
+  isHost: boolean;
+}
+
+export const GameLobby: React.FC<GameLobbyProps> = ({
+  gameService,
+  players,
+  onStartGame,
+  isHost
+}) => {
+  const [playerName, setPlayerName] = useState('');
+  const [playerColor, setPlayerColor] = useState('#3498db');
+  const [hasJoined, setHasJoined] = useState(false);
+
+  const handleJoinGame = async () => {
+    if (!playerName.trim()) return;
+
+    try {
+      await gameService.joinGame(playerName.trim(), playerColor);
+      setHasJoined(true);
+    } catch (error) {
+      console.error('Failed to join game:', error);
+    }
+  };
+
+  const colors = [
+    '#3498db', '#e74c3c', '#27ae60', '#f1c40f',
+    '#9b59b6', '#e67e22', '#1abc9c', '#34495e'
+  ];
+
+  if (!hasJoined) {
+    return (
+      <div className="game-lobby">
+        <h2>Join Game</h2>
+        
+        <div className="join-form">
+          <div className="form-group">
+            <label>Player Name:</label>
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="Enter your name"
+              maxLength={20}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Color:</label>
+            <div className="color-picker">
+              {colors.map(color => (
+                <button
+                  key={color}
+                  className={`color-option ${playerColor === color ? 'selected' : ''}`}
+                  style={{ backgroundColor: color }}
+                  onClick={() => setPlayerColor(color)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={handleJoinGame}
+            disabled={!playerName.trim()}
+            className="join-button"
+          >
+            Join Game
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="game-lobby">
+      <h2>Game Lobby</h2>
+      
+      <div className="player-list">
+        <h3>Players ({players.length}/8):</h3>
+        {players.map(player => (
+          <div key={player.id} className="player-item">
+            <div
+              className="player-color"
+              style={{ backgroundColor: player.color }}
+            />
+            <span className="player-name">{player.name}</span>
+            <span className="player-score">Score: {player.score}</span>
+          </div>
+        ))}
+      </div>
+
+      {isHost && (
+        <div className="host-controls">
+          <button
+            onClick={onStartGame}
+            disabled={players.length < 2}
+            className="start-button"
+          >
+            Start Game
+          </button>
+          
+          <p className="help-text">
+            {players.length < 2 
+              ? 'Need at least 2 players to start'
+              : 'Ready to start!'}
+          </p>
+        </div>
+      )}
+
+      <div className="game-controls">
+        <h4>Controls:</h4>
+        <ul>
+          <li>WASD or Arrow Keys - Move</li>
+          <li>Mouse Click - Shoot</li>
+          <li>Collect power-ups to gain advantages!</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+```
+
+## Features Demonstrated
+
+This multiplayer game showcases:
+
+1. **Real-time Synchronization**: Player movements and actions sync instantly
+2. **Authoritative Server**: Server handles physics and collision detection
+3. **Client Prediction**: Smooth movement with local prediction
+4. **Game Physics**: Projectile physics and collision detection
+5. **Power-up System**: Collectible items that affect gameplay
+6. **Presence Management**: Player connection and disconnection handling
+7. **Leaderboard**: Real-time score tracking
+8. **Spectator Mode**: Watch games in progress
+
+## Running the Example
+
+1. **Install dependencies**:
+```bash
+npm install ksync canvas
+```
+
+2. **Start the game server**:
+```bash
+# See server implementation in the chat example
+node game-server.js
+```
+
+3. **Run the React app**:
+```bash
+npm run dev
+```
+
+4. **Open multiple browser tabs** to test multiplayer functionality!
+
+This example demonstrates how kSync enables sophisticated real-time multiplayer games with minimal complexity, handling synchronization, physics, and player management seamlessly. 

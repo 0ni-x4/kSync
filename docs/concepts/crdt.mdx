@@ -1,0 +1,308 @@
+---
+title: "CRDT Integration"
+description: "Understanding Conflict-free Replicated Data Types in kSync for true collaborative editing"
+---
+
+# CRDT Integration
+
+CRDTs (Conflict-free Replicated Data Types) are data structures that can be updated concurrently by multiple users without conflicts. kSync includes built-in CRDT support for true collaborative applications.
+
+## What are CRDTs?
+
+CRDTs guarantee that:
+- **Concurrent updates never conflict** - Multiple users can edit simultaneously
+- **Eventually consistent** - All nodes converge to the same state
+- **Commutative operations** - Order of operations doesn't matter
+- **No coordination required** - Works perfectly offline
+
+## Available CRDT Types
+
+### LWW-Register (Last-Write-Wins Register)
+
+Perfect for single values where the most recent update wins.
+
+```typescript
+import { ksync } from '@klastra/ksync';
+
+// Create a CRDT-enabled kSync instance
+const crdt = ksync.createCRDT({
+  nodeId: 'user-alice',
+  mode: 'event-sourcing' // or 'crdt-only'
+});
+
+// Create an LWW register for a document title
+const titleRegister = crdt.createLWWRegister('document-title', 'Untitled');
+
+// Update the title (with automatic timestamp)
+await titleRegister.set('My Amazing Document');
+
+// Get current value
+const currentTitle = titleRegister.get(); // "My Amazing Document"
+
+// Even if another user updates simultaneously, no conflicts!
+```
+
+### G-Set (Grow-only Set)
+
+Perfect for collections where items can only be added, never removed.
+
+```typescript
+// Create a grow-only set for document tags
+const tagsSet = crdt.createGSet('document-tags');
+
+// Add tags (idempotent - safe to add multiple times)
+await tagsSet.add('javascript');
+await tagsSet.add('tutorial');
+await tagsSet.add('web-development');
+
+// Check if contains
+const hasTag = tagsSet.has('javascript'); // true
+
+// Get all tags
+const allTags = tagsSet.values(); // Set(['javascript', 'tutorial', 'web-development'])
+
+// Multiple users can add tags simultaneously without conflicts
+```
+
+### G-Counter (Grow-only Counter)
+
+Perfect for metrics that only increase (likes, views, downloads).
+
+```typescript
+// Create a grow-only counter for document likes
+const likesCounter = crdt.createGCounter('document-likes');
+
+// Increment by 1 (default)
+await likesCounter.increment();
+
+// Increment by custom amount
+await likesCounter.increment(5);
+
+// Get current value
+const totalLikes = likesCounter.value(); // number
+
+// Each user can increment simultaneously without conflicts
+```
+
+### CRDT Map
+
+Perfect for nested CRDT structures with different data types.
+
+```typescript
+// Create a CRDT map for a collaborative document
+const documentMap = crdt.createCRDTMap('collaborative-doc');
+
+// Set different CRDT types
+await documentMap.setLWW('title', 'My Document');
+await documentMap.setLWW('author', 'Alice');
+await documentMap.setGSet('collaborators');
+await documentMap.setGCounter('wordCount');
+
+// Use the nested CRDTs
+const collaborators = documentMap.getGSet('collaborators');
+await collaborators.add('bob@example.com');
+
+const wordCounter = documentMap.getGCounter('wordCount');
+await wordCounter.increment(150);
+
+// Get all data
+const docData = documentMap.toJSON();
+```
+
+## Integration with Events
+
+CRDTs work seamlessly with kSync's event system:
+
+```typescript
+import { z } from 'zod';
+
+// Define CRDT event schemas
+crdt.defineSchema('title-update', z.object({
+  registerId: z.string(),
+  value: z.string(),
+  timestamp: z.number(),
+  nodeId: z.string()
+}));
+
+// Listen to CRDT changes
+crdt.on('title-update', (event) => {
+  console.log(`Title updated by ${event.data.nodeId}: ${event.data.value}`);
+});
+
+// CRDT operations automatically emit events
+const titleRegister = crdt.createLWWRegister('doc-title', 'Initial');
+await titleRegister.set('Updated Title'); // Emits 'title-update' event
+```
+
+## Real-time Collaborative Example
+
+Here's a complete example of a collaborative text editor:
+
+```typescript
+import { ksync } from '@klastra/ksync';
+import { z } from 'zod';
+
+// Initialize CRDT instance
+const collaborativeDoc = ksync.createCRDT({
+  nodeId: `user-${Math.random().toString(36).slice(2)}`,
+  mode: 'event-sourcing'
+});
+
+// Define document structure with CRDTs
+const document = {
+  title: collaborativeDoc.createLWWRegister('title', 'Untitled Document'),
+  content: collaborativeDoc.createLWWRegister('content', ''),
+  collaborators: collaborativeDoc.createGSet('collaborators'),
+  version: collaborativeDoc.createGCounter('version'),
+  tags: collaborativeDoc.createGSet('tags')
+};
+
+// Real-time collaboration functions
+export const CollaborativeEditor = {
+  // Update document title
+  async setTitle(newTitle: string) {
+    await document.title.set(newTitle);
+  },
+
+  // Update document content
+  async setContent(newContent: string) {
+    await document.content.set(newContent);
+    await document.version.increment(); // Track versions
+  },
+
+  // Add collaborator
+  async addCollaborator(email: string) {
+    await document.collaborators.add(email);
+  },
+
+  // Add tag
+  async addTag(tag: string) {
+    await document.tags.add(tag);
+  },
+
+  // Get current document state
+  getState() {
+    return {
+      title: document.title.get(),
+      content: document.content.get(),
+      collaborators: Array.from(document.collaborators.values()),
+      version: document.version.value(),
+      tags: Array.from(document.tags.values())
+    };
+  },
+
+  // Listen to changes
+  onChange(callback: (state: any) => void) {
+    // Listen to all CRDT events
+    collaborativeDoc.on('*', () => {
+      callback(this.getState());
+    });
+  }
+};
+
+// Usage
+await CollaborativeEditor.setTitle('My Collaborative Document');
+await CollaborativeEditor.addCollaborator('alice@example.com');
+await CollaborativeEditor.addTag('important');
+
+CollaborativeEditor.onChange((state) => {
+  console.log('Document updated:', state);
+  // Update UI reactively
+});
+```
+
+## Vector Clocks
+
+kSync uses vector clocks for ordering events across nodes:
+
+```typescript
+// Vector clocks are handled automatically, but you can access them
+const vectorClock = crdt.getVectorClock();
+
+// Compare vector clocks
+const clock1 = collaborativeDoc.getVectorClock();
+const clock2 = otherNode.getVectorClock();
+
+const comparison = crdt.compareVectorClocks(clock1, clock2);
+// Returns: 'before' | 'after' | 'concurrent' | 'equal'
+
+// Useful for conflict detection and ordering
+if (comparison === 'concurrent') {
+  console.log('Concurrent updates detected - CRDTs will resolve automatically');
+}
+```
+
+## Serialization & Persistence
+
+CRDTs can be serialized for storage and network transfer:
+
+```typescript
+// Serialize CRDT state
+const serialized = await titleRegister.toJSON();
+console.log(serialized);
+// { value: "My Document", timestamp: 1703123456789, nodeId: "user-alice" }
+
+// Deserialize from JSON
+const restored = crdt.createLWWRegister('restored-title');
+await restored.fromJSON(serialized);
+
+// Works with all CRDT types
+const setData = await tagsSet.toJSON();
+const counterData = await likesCounter.toJSON();
+```
+
+## Best Practices
+
+### When to Use Each CRDT Type
+
+- **LWW-Register**: Document titles, user preferences, configuration values
+- **G-Set**: Tags, categories, permissions, team members
+- **G-Counter**: Likes, views, downloads, scores, metrics
+- **CRDT Map**: Complex documents, user profiles, nested data structures
+
+### Performance Considerations
+
+```typescript
+// Batch CRDT operations for better performance
+await crdt.batch(async () => {
+  await document.title.set('New Title');
+  await document.tags.add('updated');
+  await document.version.increment();
+});
+
+// Use appropriate data structures
+const largeSet = crdt.createGSet('large-collection');
+// G-Sets are efficient for thousands of items
+```
+
+### Conflict Resolution
+
+```typescript
+// CRDTs resolve conflicts automatically, but you can listen for resolution events
+crdt.on('conflict-resolved', (event) => {
+  console.log('Conflict resolved:', event.data);
+  // Log for debugging or analytics
+});
+```
+
+## Integration with Sync
+
+CRDTs work with both sync modes:
+
+```typescript
+// Real-time WebSocket sync
+const realtimeSync = ksync.createWebSocketSync({
+  url: 'ws://localhost:3001',
+  crdtEnabled: true // Enable CRDT sync
+});
+
+// Git-like sync
+const gitSync = ksync.createGitSync({
+  serverUrl: 'https://api.example.com',
+  crdtEnabled: true // Enable CRDT sync
+});
+
+// CRDTs automatically sync across all connected clients
+```
+
+CRDTs make collaborative applications simple and robust. No more complex conflict resolution logic - just define your data structures and let kSync handle the rest! 

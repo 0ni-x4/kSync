@@ -1,0 +1,526 @@
+---
+title: "Drizzle ORM Integration"
+description: "Query your real-time data with familiar SQL-like syntax using kSync's Drizzle integration"
+---
+
+# Drizzle ORM Integration
+
+kSync includes a powerful Drizzle ORM adapter that lets you query your real-time data using familiar SQL-like syntax. This brings database-like functionality to your event-sourced applications.
+
+## What is the Drizzle Integration?
+
+The kSync Drizzle adapter provides:
+- **SQL-like querying** with familiar `findMany()`, `where()`, `orderBy()` syntax
+- **Type-safe queries** with full TypeScript support
+- **Real-time materialization** that auto-updates query results
+- **Event-sourcing compatibility** for reliable state management
+- **Performance optimization** with caching and indexing
+
+## Basic Setup
+
+```typescript
+import { ksync } from '@klastra/ksync';
+import { z } from 'zod';
+
+// Define your data schema
+const UserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+  role: z.enum(['admin', 'user', 'moderator']),
+  createdAt: z.number(),
+  isActive: z.boolean().default(true)
+});
+
+// Create kSync instance with Drizzle adapter
+const db = ksync.createDrizzleAdapter({
+  mode: 'event-sourcing', // or 'crdt'
+  schema: {
+    users: UserSchema,
+    // Add more tables/collections here
+  }
+});
+
+// Define event schemas for data mutations
+ksync.defineSchema('user-created', UserSchema);
+ksync.defineSchema('user-updated', UserSchema.partial().extend({ id: z.string() }));
+ksync.defineSchema('user-deleted', z.object({ id: z.string() }));
+```
+
+## Query Interface
+
+The Drizzle adapter provides a familiar database-like query interface:
+
+### Finding Records
+
+```typescript
+// Find all users
+const allUsers = await db.users.findMany();
+
+// Find with conditions
+const activeUsers = await db.users.findMany({
+  where: { isActive: true }
+});
+
+// Find by ID
+const user = await db.users.findById('user-123');
+
+// Find first match
+const adminUser = await db.users.findFirst({
+  where: { role: 'admin' }
+});
+```
+
+### Advanced Filtering
+
+```typescript
+// Complex where conditions
+const results = await db.users.findMany({
+  where: {
+    role: { in: ['admin', 'moderator'] },
+    isActive: true,
+    createdAt: { gte: Date.now() - 86400000 } // Last 24 hours
+  }
+});
+
+// Text search
+const searchResults = await db.users.findMany({
+  where: {
+    name: { contains: 'john' }, // Case-insensitive search
+    email: { endsWith: '@company.com' }
+  }
+});
+
+// Null checks
+const usersWithoutEmail = await db.users.findMany({
+  where: {
+    email: { isNull: true }
+  }
+});
+```
+
+### Sorting and Pagination
+
+```typescript
+// Sorting
+const sortedUsers = await db.users.findMany({
+  orderBy: { createdAt: 'desc' }
+});
+
+// Multiple sort criteria
+const complexSort = await db.users.findMany({
+  orderBy: [
+    { role: 'asc' },
+    { createdAt: 'desc' }
+  ]
+});
+
+// Pagination
+const paginatedUsers = await db.users.findMany({
+  limit: 10,
+  offset: 20 // Skip first 20 records
+});
+
+// Cursor-based pagination
+const cursorPaginated = await db.users.findMany({
+  limit: 10,
+  cursor: { id: 'last-seen-id' }
+});
+```
+
+### Field Selection and Transformation
+
+```typescript
+// Select specific fields
+const userNames = await db.users.findMany({
+  select: { id: true, name: true }
+});
+
+// Exclude fields
+const publicUsers = await db.users.findMany({
+  omit: { email: true } // Hide sensitive data
+});
+
+// Transform results
+const userStats = await db.users.findMany({
+  transform: (user) => ({
+    ...user,
+    displayName: `${user.name} (${user.role})`,
+    accountAge: Date.now() - user.createdAt
+  })
+});
+```
+
+## Live Queries
+
+One of the most powerful features is live queries that automatically update:
+
+```typescript
+// Create a live query that updates automatically
+const liveActiveUsers = db.users.createLiveQuery({
+  where: { isActive: true },
+  orderBy: { createdAt: 'desc' }
+});
+
+// Listen to live updates
+liveActiveUsers.subscribe((users) => {
+  console.log('Active users updated:', users);
+  // Update UI automatically
+  updateUserList(users);
+});
+
+// The query automatically updates when:
+// - New users are created
+// - Existing users are updated
+// - Users are deleted
+// - Any relevant events occur
+```
+
+## Data Mutations
+
+Use the familiar event system for data mutations:
+
+```typescript
+// Create a new user
+await ksync.send('user-created', {
+  id: 'user-456',
+  name: 'Alice Johnson',
+  email: 'alice@example.com',
+  role: 'user',
+  createdAt: Date.now(),
+  isActive: true
+});
+
+// Update user
+await ksync.send('user-updated', {
+  id: 'user-456',
+  role: 'moderator' // Partial update
+});
+
+// Delete user
+await ksync.send('user-deleted', {
+  id: 'user-456'
+});
+
+// Queries automatically reflect these changes!
+```
+
+## Materializer Configuration
+
+Control how events are converted to queryable state:
+
+```typescript
+const db = ksync.createDrizzleAdapter({
+  schema: { users: UserSchema },
+  materializers: {
+    users: {
+      // Custom materializer function
+      materialize: (events, currentState) => {
+        const users = new Map(currentState || []);
+        
+        for (const event of events) {
+          switch (event.type) {
+            case 'user-created':
+              users.set(event.data.id, event.data);
+              break;
+            case 'user-updated':
+              const existing = users.get(event.data.id);
+              if (existing) {
+                users.set(event.data.id, { ...existing, ...event.data });
+              }
+              break;
+            case 'user-deleted':
+              users.delete(event.data.id);
+              break;
+          }
+        }
+        
+        return Array.from(users.values());
+      },
+      
+      // Performance optimizations
+      cacheSize: 1000, // Cache last 1000 query results
+      indexFields: ['id', 'email', 'role'], // Create indexes for fast lookups
+      batchSize: 100 // Process events in batches
+    }
+  }
+});
+```
+
+## Aggregations and Analytics
+
+Perform real-time analytics on your data:
+
+```typescript
+// Count queries
+const userCount = await db.users.count();
+const activeUserCount = await db.users.count({
+  where: { isActive: true }
+});
+
+// Group by
+const usersByRole = await db.users.groupBy('role');
+// Returns: { admin: 5, user: 150, moderator: 12 }
+
+// Custom aggregations
+const userStats = await db.users.aggregate({
+  totalUsers: 'count',
+  averageAccountAge: {
+    field: 'createdAt',
+    operation: (values) => {
+      const ages = values.map(created => Date.now() - created);
+      return ages.reduce((a, b) => a + b) / ages.length;
+    }
+  }
+});
+```
+
+## Relations and Joins
+
+Handle relationships between different data types:
+
+```typescript
+// Define related schemas
+const PostSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  content: z.string(),
+  authorId: z.string(), // Foreign key
+  createdAt: z.number()
+});
+
+const db = ksync.createDrizzleAdapter({
+  schema: {
+    users: UserSchema,
+    posts: PostSchema
+  },
+  relations: {
+    posts: {
+      author: {
+        field: 'authorId',
+        references: 'users.id'
+      }
+    },
+    users: {
+      posts: {
+        field: 'id',
+        references: 'posts.authorId',
+        multiple: true
+      }
+    }
+  }
+});
+
+// Query with relations
+const postsWithAuthors = await db.posts.findMany({
+  include: { author: true }
+});
+
+const usersWithPosts = await db.users.findMany({
+  include: { posts: true },
+  where: { role: 'admin' }
+});
+```
+
+## Performance Optimization
+
+### Indexing
+
+```typescript
+const db = ksync.createDrizzleAdapter({
+  schema: { users: UserSchema },
+  indexes: {
+    users: [
+      'email', // Single field index
+      ['role', 'isActive'], // Compound index
+      { field: 'name', type: 'text' } // Text search index
+    ]
+  }
+});
+```
+
+### Query Caching
+
+```typescript
+// Enable query result caching
+const cachedQuery = await db.users.findMany({
+  where: { isActive: true },
+  cache: {
+    ttl: 60000, // Cache for 1 minute
+    key: 'active-users' // Custom cache key
+  }
+});
+
+// Manual cache control
+db.users.clearCache('active-users');
+db.users.clearAllCache();
+```
+
+### Batch Operations
+
+```typescript
+// Batch multiple operations
+await db.batch(async (tx) => {
+  await tx.users.create({ id: '1', name: 'Alice', ... });
+  await tx.users.create({ id: '2', name: 'Bob', ... });
+  await tx.users.update('3', { role: 'admin' });
+});
+```
+
+## Real-World Example: User Management System
+
+```typescript
+import { ksync } from '@klastra/ksync';
+import { z } from 'zod';
+
+// Schema definitions
+const UserSchema = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  name: z.string(),
+  role: z.enum(['user', 'admin', 'moderator']),
+  lastLoginAt: z.number().optional(),
+  createdAt: z.number(),
+  isActive: z.boolean().default(true)
+});
+
+// Setup database adapter
+const userDB = ksync.createDrizzleAdapter({
+  schema: { users: UserSchema },
+  materializers: {
+    users: {
+      indexFields: ['email', 'role', 'isActive'],
+      cacheSize: 500
+    }
+  }
+});
+
+// User management service
+export class UserService {
+  // Get dashboard stats
+  async getDashboardStats() {
+    const [totalUsers, activeUsers, adminUsers, recentUsers] = await Promise.all([
+      userDB.users.count(),
+      userDB.users.count({ where: { isActive: true } }),
+      userDB.users.count({ where: { role: 'admin' } }),
+      userDB.users.count({
+        where: {
+          createdAt: { gte: Date.now() - 86400000 } // Last 24h
+        }
+      })
+    ]);
+
+    return { totalUsers, activeUsers, adminUsers, recentUsers };
+  }
+
+  // Search users with filters
+  async searchUsers(filters: {
+    query?: string;
+    role?: string;
+    isActive?: boolean;
+    page?: number;
+    limit?: number;
+  }) {
+    const { query, role, isActive, page = 1, limit = 20 } = filters;
+    
+    const where: any = {};
+    
+    if (query) {
+      where.OR = [
+        { name: { contains: query } },
+        { email: { contains: query } }
+      ];
+    }
+    
+    if (role) where.role = role;
+    if (isActive !== undefined) where.isActive = isActive;
+
+    return await userDB.users.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      limit,
+      offset: (page - 1) * limit
+    });
+  }
+
+  // Create live dashboard
+  createLiveDashboard() {
+    // Live query for active users
+    const liveActiveUsers = userDB.users.createLiveQuery({
+      where: { isActive: true },
+      orderBy: { lastLoginAt: 'desc' },
+      limit: 10
+    });
+
+    // Live query for admin users
+    const liveAdminUsers = userDB.users.createLiveQuery({
+      where: { role: 'admin' },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return {
+      activeUsers: liveActiveUsers,
+      adminUsers: liveAdminUsers
+    };
+  }
+
+  // Bulk operations
+  async bulkUpdateUsers(userIds: string[], updates: Partial<UserSchema>) {
+    await userDB.batch(async (tx) => {
+      for (const id of userIds) {
+        await ksync.send('user-updated', { id, ...updates });
+      }
+    });
+  }
+}
+
+// Usage
+const userService = new UserService();
+
+// Real-time dashboard
+const dashboard = userService.createLiveDashboard();
+dashboard.activeUsers.subscribe(users => {
+  updateActiveUsersList(users);
+});
+
+// Search with filters
+const results = await userService.searchUsers({
+  query: 'john',
+  role: 'user',
+  isActive: true,
+  page: 1,
+  limit: 20
+});
+```
+
+## Integration with React
+
+The Drizzle adapter works seamlessly with React hooks:
+
+```typescript
+import { useKSyncLiveQuery } from '@klastra/ksync/react';
+
+function UserList() {
+  // Live query that auto-updates the component
+  const { data: users, loading, error } = useKSyncLiveQuery(
+    () => userDB.users.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: 'desc' }
+    }),
+    [] // Dependencies
+  );
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name} - {user.role}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+The Drizzle integration brings the power of SQL-like querying to real-time applications, making it easy to build complex, performant apps with familiar database patterns. 

@@ -1,0 +1,551 @@
+---
+title: "Types & Interfaces"
+description: "Complete TypeScript type definitions for kSync - interfaces, types, and utility types"
+---
+
+# Types & Interfaces
+
+Complete TypeScript type definitions for kSync library.
+
+## Core Types
+
+### Event
+
+The fundamental data structure in kSync representing a single event.
+
+```typescript
+interface Event {
+  id: string;                    // Unique event identifier (UUID)
+  type: string;                  // Event type/name
+  data: any;                     // Event payload data
+  timestamp: number;             // Unix timestamp in milliseconds
+  version: number;               // Event sequence number
+  actor?: string;                // ID of the entity that created the event
+  metadata?: EventMetadata;      // Additional metadata
+}
+
+interface EventMetadata {
+  source?: string;               // Source system/client ID
+  correlationId?: string;        // For tracking related events
+  causationId?: string;          // ID of the event that caused this one
+  streamId?: string;             // Stream/aggregate ID
+  streamVersion?: number;        // Version within the stream
+  tags?: string[];               // Event tags for categorization
+  [key: string]: any;           // Additional custom metadata
+}
+```
+
+### EventHandler
+
+Function signature for event handlers.
+
+```typescript
+type EventHandler<T = any> = (event: Event<T>) => void | Promise<void>;
+
+// Generic event with typed data
+interface Event<T = any> {
+  id: string;
+  type: string;
+  data: T;
+  timestamp: number;
+  version: number;
+  actor?: string;
+  metadata?: EventMetadata;
+}
+```
+
+### Materializer
+
+Function that computes state from events.
+
+```typescript
+type Materializer<TState = any> = (events: Event[]) => TState;
+
+// With incremental updates
+type IncrementalMaterializer<TState = any> = (
+  currentState: TState,
+  newEvents: Event[]
+) => TState;
+```
+
+## Configuration Types
+
+### KSyncOptions
+
+Configuration options for creating a KSync instance.
+
+```typescript
+interface KSyncOptions {
+  storage?: StorageAdapter;
+  syncClient?: SyncClient;
+  mode?: SyncMode;
+  eventValidation?: EventValidation;
+  compression?: CompressionOptions;
+  encryption?: EncryptionOptions;
+  debug?: boolean;
+}
+
+type SyncMode = 'event-sourcing' | 'crdt' | 'hybrid';
+
+interface EventValidation {
+  enabled: boolean;
+  schema?: JSONSchema;
+  customValidator?: (event: Event) => boolean | string;
+}
+
+interface CompressionOptions {
+  enabled: boolean;
+  algorithm?: 'gzip' | 'brotli' | 'lz4';
+  level?: number; // 1-9
+}
+
+interface EncryptionOptions {
+  enabled: boolean;
+  algorithm?: 'aes-256-gcm' | 'chacha20-poly1305';
+  key: string | Buffer;
+  keyDerivation?: 'pbkdf2' | 'scrypt';
+}
+```
+
+## Storage Types
+
+### StorageAdapter
+
+Interface that all storage adapters must implement.
+
+```typescript
+interface StorageAdapter {
+  save(event: Event): Promise<void>;
+  load(): Promise<Event[]>;
+  clear(): Promise<void>;
+  getMetadata(): Promise<StorageMetadata>;
+}
+
+interface StorageMetadata {
+  version: number;
+  eventCount: number;
+  lastModified: Date;
+  size?: number;
+  checksum?: string;
+}
+```
+
+### Storage Options
+
+Configuration for different storage adapters.
+
+```typescript
+// File Storage
+interface FileStorageOptions {
+  compression?: boolean;
+  backup?: boolean;
+  syncWrites?: boolean;
+  maxFileSize?: number;
+  rotationCount?: number;
+}
+
+// IndexedDB Storage
+interface IndexedDBStorageOptions {
+  version?: number;
+  storeName?: string;
+  indexes?: IndexConfig[];
+}
+
+interface IndexConfig {
+  name: string;
+  keyPath: string | string[];
+  unique?: boolean;
+}
+
+// SQLite Storage
+interface SQLiteStorageOptions {
+  tableName?: string;
+  wal?: boolean;
+  cache?: number;
+  pool?: PoolConfig;
+}
+
+interface PoolConfig {
+  min: number;
+  max: number;
+  acquireTimeoutMillis?: number;
+  createTimeoutMillis?: number;
+  destroyTimeoutMillis?: number;
+  idleTimeoutMillis?: number;
+}
+
+// Redis Storage
+interface RedisStorageOptions {
+  host: string;
+  port: number;
+  password?: string;
+  db?: number;
+  keyPrefix?: string;
+  compression?: boolean;
+  cluster?: RedisClusterConfig;
+}
+
+interface RedisClusterConfig {
+  nodes: Array<{ host: string; port: number }>;
+  options?: any;
+}
+```
+
+## Sync Types
+
+### SyncClient
+
+Interface for synchronization clients.
+
+```typescript
+interface SyncClient {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  send(event: Event): Promise<void>;
+  on(eventType: string, handler: Function): () => void;
+  off(eventType: string, handler: Function): void;
+}
+```
+
+### WebSocket Sync Options
+
+```typescript
+interface WebSocketSyncOptions {
+  auth?: AuthConfig;
+  reconnect?: boolean;
+  heartbeat?: number;
+  compression?: boolean;
+  maxReconnectAttempts?: number;
+  reconnectInterval?: number;
+  timeout?: number;
+}
+
+type AuthConfig = 
+  | { type: 'jwt'; token: string }
+  | { type: 'apikey'; key: string }
+  | { type: 'basic'; username: string; password: string }
+  | { type: 'custom'; authenticate: () => Promise<string> };
+```
+
+### Git Sync Options
+
+```typescript
+interface GitSyncOptions {
+  url: string;
+  auth?: GitAuthConfig;
+  branch?: string;
+  pullInterval?: number;
+  compression?: boolean;
+  conflictResolution?: ConflictResolutionStrategy;
+}
+
+type GitAuthConfig =
+  | { type: 'token'; token: string }
+  | { type: 'ssh'; privateKey: string; publicKey?: string }
+  | { type: 'basic'; username: string; password: string };
+
+type ConflictResolutionStrategy = 
+  | 'last-write-wins'
+  | 'first-write-wins'
+  | 'manual'
+  | 'custom';
+```
+
+### Sync Results
+
+```typescript
+interface PullResult {
+  newEvents: Event[];
+  conflicts: Conflict[];
+  serverVersion: number;
+}
+
+interface PushResult {
+  pushedEvents: Event[];
+  rejectedEvents: Event[];
+  serverVersion: number;
+}
+
+interface SyncResult {
+  pulled: PullResult;
+  pushed: PushResult;
+  conflicts: Conflict[];
+}
+
+interface Conflict {
+  type: ConflictType;
+  ours: Event;
+  theirs: Event;
+  resolution?: Event;
+}
+
+type ConflictType = 
+  | 'concurrent-edit'
+  | 'delete-modify'
+  | 'modify-delete'
+  | 'duplicate-id';
+```
+
+## CRDT Types
+
+### CRDT Interfaces
+
+```typescript
+interface CRDT<T = any> {
+  merge(other: CRDT<T>): void;
+  clone(): CRDT<T>;
+  toJSON(): any;
+  fromJSON(json: any): void;
+}
+
+// Last-Write-Wins Register
+interface LWWRegister<T> extends CRDT<T> {
+  set(value: T, timestamp?: number): void;
+  get(): T;
+  getTimestamp(): number;
+}
+
+// Grow-only Set
+interface GSet<T> extends CRDT<Set<T>> {
+  add(item: T): void;
+  has(item: T): boolean;
+  toArray(): T[];
+  size(): number;
+}
+
+// Grow-only Counter
+interface GCounter extends CRDT<number> {
+  increment(amount?: number): void;
+  value(): number;
+  getActorValue(actor: string): number;
+}
+
+// CRDT Map
+interface CRDTMap extends CRDT<Map<string, any>> {
+  set(key: string, crdt: CRDT): void;
+  get(key: string): CRDT | undefined;
+  has(key: string): boolean;
+  delete(key: string): boolean;
+  keys(): string[];
+}
+```
+
+### Vector Clock
+
+```typescript
+interface VectorClock {
+  [actor: string]: number;
+}
+
+interface VectorClockUtils {
+  increment(clock: VectorClock, actor: string): VectorClock;
+  merge(clock1: VectorClock, clock2: VectorClock): VectorClock;
+  compare(clock1: VectorClock, clock2: VectorClock): ClockComparison;
+  isConcurrent(clock1: VectorClock, clock2: VectorClock): boolean;
+}
+
+type ClockComparison = 'before' | 'after' | 'concurrent' | 'equal';
+```
+
+## Multi-Store Types
+
+### KSyncMultistore
+
+```typescript
+interface KSyncMultistore {
+  createStore<T>(name: string, options?: KSyncOptions): KSync<T>;
+  getStore<T>(name: string): KSync<T> | undefined;
+  removeStore(name: string): boolean;
+  listStores(): string[];
+  broadcast(eventType: string, data: any): Promise<void>;
+  syncAll(): Promise<void>;
+}
+
+interface MultistoreOptions {
+  sharedSync?: boolean;
+  isolation?: IsolationLevel;
+  crossStoreEvents?: boolean;
+}
+
+type IsolationLevel = 'none' | 'read-uncommitted' | 'read-committed' | 'serializable';
+```
+
+### Derived Store
+
+```typescript
+interface DerivedStore<T> {
+  readonly value: T;
+  readonly dependencies: string[];
+  invalidate(): void;
+  recompute(): Promise<void>;
+  subscribe(callback: (value: T) => void): () => void;
+}
+
+type DerivedStoreFunction<T> = (stores: Record<string, KSync>) => T;
+```
+
+## React Hook Types
+
+### Hook Return Types
+
+```typescript
+// useKSync
+interface UseKSyncReturn {
+  ksync: KSync;
+  isConnected: boolean;
+  error: Error | null;
+}
+
+// useKSyncEvent
+interface UseKSyncEventOptions {
+  filter?: (event: Event) => boolean;
+  debounce?: number;
+  immediate?: boolean;
+}
+
+// useKSyncLiveQuery
+interface UseKSyncLiveQueryReturn<T> {
+  data: T | null;
+  loading: boolean;
+  error: Error | null;
+  refetch: () => void;
+}
+
+// useKSyncOptimistic
+interface UseKSyncOptimisticReturn<T> {
+  state: T;
+  optimisticUpdate: (updater: (state: T) => T) => void;
+  commit: () => Promise<void>;
+  rollback: () => void;
+  isPending: boolean;
+}
+
+// useKSyncPresence
+interface UseKSyncPresenceReturn<T> {
+  presence: T;
+  others: Array<{ id: string; presence: T }>;
+  updatePresence: (presence: Partial<T>) => void;
+}
+
+// useKSyncStream
+interface UseKSyncStreamReturn {
+  data: string;
+  isStreaming: boolean;
+  error: Error | null;
+  abort: () => void;
+}
+```
+
+## Error Types
+
+### KSync Errors
+
+```typescript
+class KSyncError extends Error {
+  readonly code: string;
+  readonly details?: any;
+  
+  constructor(message: string, code: string, details?: any);
+}
+
+class ValidationError extends KSyncError {
+  constructor(message: string, details?: any);
+}
+
+class StorageError extends KSyncError {
+  constructor(message: string, details?: any);
+}
+
+class SyncError extends KSyncError {
+  constructor(message: string, details?: any);
+}
+
+class ConflictError extends KSyncError {
+  readonly conflicts: Conflict[];
+  
+  constructor(message: string, conflicts: Conflict[]);
+}
+```
+
+## Utility Types
+
+### Event Utilities
+
+```typescript
+// Extract event data type from event type
+type EventData<T extends Event> = T['data'];
+
+// Event with specific data type
+type TypedEvent<TType extends string, TData = any> = Event<TData> & {
+  type: TType;
+};
+
+// Event handler for specific event type
+type TypedEventHandler<TType extends string, TData = any> = (
+  event: TypedEvent<TType, TData>
+) => void | Promise<void>;
+
+// Map of event types to their data types
+interface EventTypeMap {
+  [eventType: string]: any;
+}
+
+// Strongly typed event emitter
+interface TypedEventEmitter<TEvents extends EventTypeMap> {
+  emit<K extends keyof TEvents>(
+    eventType: K,
+    data: TEvents[K]
+  ): Promise<void>;
+  
+  on<K extends keyof TEvents>(
+    eventType: K,
+    handler: TypedEventHandler<K & string, TEvents[K]>
+  ): () => void;
+}
+```
+
+### Query Types
+
+```typescript
+// Query function type
+type QueryFunction<TState, TResult> = (state: TState) => TResult;
+
+// Drizzle-style query builder
+interface QueryBuilder<T> {
+  where(condition: (item: T) => boolean): QueryBuilder<T>;
+  orderBy(compareFn: (a: T, b: T) => number): QueryBuilder<T>;
+  limit(count: number): QueryBuilder<T>;
+  offset(count: number): QueryBuilder<T>;
+  select<K extends keyof T>(...fields: K[]): QueryBuilder<Pick<T, K>>;
+  execute(): T[];
+}
+```
+
+### Advanced Types
+
+```typescript
+// Deep readonly
+type DeepReadonly<T> = {
+  readonly [P in keyof T]: T[P] extends object ? DeepReadonly<T[P]> : T[P];
+};
+
+// Optional fields
+type Optional<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+
+// Required fields
+type Required<T, K extends keyof T> = T & { [P in K]-?: T[P] };
+
+// Event without readonly fields
+type EventInput = Omit<Event, 'id' | 'timestamp' | 'version'>;
+
+// Merge strategy types
+type MergeStrategy<T> = (local: T, remote: T) => T;
+
+// Plugin interface
+interface KSyncPlugin {
+  name: string;
+  version: string;
+  install(ksync: KSync): void | Promise<void>;
+  uninstall?(ksync: KSync): void | Promise<void>;
+}
+``` 

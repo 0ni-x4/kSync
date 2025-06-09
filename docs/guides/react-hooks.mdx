@@ -1,0 +1,749 @@
+---
+title: "React Hooks"
+description: "Reactive React hooks for seamless kSync integration with automatic re-renders"
+---
+
+# React Hooks
+
+kSync provides a comprehensive set of React hooks that make it easy to integrate real-time data synchronization into your React applications. These hooks automatically handle subscriptions, re-renders, and cleanup.
+
+## Installation
+
+React is an optional peer dependency. Install it if you haven't already:
+
+```bash
+npm install react react-dom
+# or
+yarn add react react-dom
+# or
+pnpm add react react-dom
+```
+
+## Setup
+
+Wrap your app with the kSync provider:
+
+```tsx
+import React from 'react';
+import { KSyncProvider } from '@klastra/ksync/react';
+import { ksync } from '@klastra/ksync';
+
+// Create your kSync instance
+const appSync = ksync.create({
+  syncUrl: 'ws://localhost:3001'
+});
+
+function App() {
+  return (
+    <KSyncProvider instance={appSync}>
+      <MyComponent />
+    </KSyncProvider>
+  );
+}
+
+export default App;
+```
+
+## Basic Hooks
+
+### useKSync
+
+Access the kSync instance from context:
+
+```tsx
+import { useKSync } from '@klastra/ksync/react';
+
+function MyComponent() {
+  const ksync = useKSync();
+  
+  const handleSendMessage = async () => {
+    await ksync.send('message-sent', {
+      id: 'msg-123',
+      content: 'Hello world!',
+      timestamp: Date.now()
+    });
+  };
+  
+  return (
+    <button onClick={handleSendMessage}>
+      Send Message
+    </button>
+  );
+}
+```
+
+### useKSyncEvent
+
+Listen to events and automatically re-render:
+
+```tsx
+import { useKSyncEvent } from '@klastra/ksync/react';
+import { useState } from 'react';
+
+function MessageList() {
+  const [messages, setMessages] = useState<any[]>([]);
+  
+  // Listen to new messages
+  useKSyncEvent('message-sent', (event) => {
+    setMessages(prev => [...prev, event.data]);
+  });
+  
+  // Listen to message updates
+  useKSyncEvent('message-updated', (event) => {
+    setMessages(prev => 
+      prev.map(msg => 
+        msg.id === event.data.id 
+          ? { ...msg, ...event.data }
+          : msg
+      )
+    );
+  });
+  
+  return (
+    <div>
+      {messages.map(message => (
+        <div key={message.id}>
+          {message.content}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Advanced Hooks
+
+### useKSyncLiveQuery
+
+Execute live queries that automatically update:
+
+```tsx
+import { useKSyncLiveQuery } from '@klastra/ksync/react';
+
+function UserList() {
+  // Live query with automatic re-renders
+  const { data: users, loading, error } = useKSyncLiveQuery(
+    async (ksync) => {
+      // This can be any async function that returns data
+      const events = await ksync.getEvents({ 
+        type: 'user-created',
+        limit: 50 
+      });
+      return events.map(e => e.data);
+    },
+    [] // Dependencies - rerun query when these change
+  );
+  
+  if (loading) return <div>Loading users...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+  
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+With Drizzle integration:
+
+```tsx
+import { useKSyncLiveQuery } from '@klastra/ksync/react';
+
+function ActiveUsers() {
+  const { data: activeUsers, loading } = useKSyncLiveQuery(
+    async (ksync) => {
+      const db = ksync.getDrizzleAdapter();
+      return await db.users.findMany({
+        where: { isActive: true },
+        orderBy: { lastSeen: 'desc' }
+      });
+    },
+    [] // Dependencies
+  );
+  
+  if (loading) return <div>Loading...</div>;
+  
+  return (
+    <div>
+      <h2>Active Users ({activeUsers.length})</h2>
+      {activeUsers.map(user => (
+        <div key={user.id}>
+          {user.name} - Last seen: {new Date(user.lastSeen).toLocaleString()}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+### useKSyncOptimistic
+
+Handle optimistic updates with automatic rollback:
+
+```tsx
+import { useKSyncOptimistic } from '@klastra/ksync/react';
+import { useState } from 'react';
+
+function TodoItem({ todo }) {
+  const [isCompleting, setIsCompleting] = useState(false);
+  
+  const { execute: toggleComplete } = useKSyncOptimistic(
+    // Optimistic update function
+    (currentTodo) => ({
+      ...currentTodo,
+      completed: !currentTodo.completed,
+      updatedAt: Date.now()
+    }),
+    
+    // Actual update function
+    async (ksync, optimisticTodo) => {
+      await ksync.send('todo-updated', {
+        id: optimisticTodo.id,
+        completed: optimisticTodo.completed,
+        updatedAt: optimisticTodo.updatedAt
+      });
+    },
+    
+    // Rollback function (optional)
+    (originalTodo, error) => {
+      console.log('Update failed, rolling back:', error);
+      return originalTodo;
+    }
+  );
+  
+  const handleToggle = async () => {
+    setIsCompleting(true);
+    try {
+      await toggleComplete(todo);
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+  
+  return (
+    <div 
+      onClick={handleToggle}
+      style={{ 
+        opacity: isCompleting ? 0.5 : 1,
+        textDecoration: todo.completed ? 'line-through' : 'none'
+      }}
+    >
+      {todo.title}
+    </div>
+  );
+}
+```
+
+### useKSyncPresence
+
+Real-time presence tracking:
+
+```tsx
+import { useKSyncPresence } from '@klastra/ksync/react';
+
+function UserPresence() {
+  const { 
+    onlineUsers, 
+    setMyStatus, 
+    myStatus 
+  } = useKSyncPresence({
+    userId: 'user-123',
+    initialStatus: { status: 'online', location: '/dashboard' }
+  });
+  
+  const handleStatusChange = (newStatus: string) => {
+    setMyStatus({ status: newStatus, location: window.location.pathname });
+  };
+  
+  return (
+    <div>
+      <div>
+        My Status: 
+        <select 
+          value={myStatus.status} 
+          onChange={(e) => handleStatusChange(e.target.value)}
+        >
+          <option value="online">Online</option>
+          <option value="away">Away</option>
+          <option value="busy">Busy</option>
+        </select>
+      </div>
+      
+      <div>
+        <h3>Online Users ({onlineUsers.length})</h3>
+        {onlineUsers.map(user => (
+          <div key={user.userId}>
+            {user.userId} - {user.status} 
+            {user.location && ` (${user.location})`}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### useKSyncStream
+
+For AI streaming applications:
+
+```tsx
+import { useKSyncStream } from '@klastra/ksync/react';
+import { useState } from 'react';
+
+function AIChat() {
+  const [message, setMessage] = useState('');
+  
+  const { 
+    messages, 
+    isStreaming, 
+    sendMessage, 
+    currentStream 
+  } = useKSyncStream({
+    onStreamStart: (streamId) => {
+      console.log('Stream started:', streamId);
+    },
+    onStreamEnd: (streamId, fullMessage) => {
+      console.log('Stream completed:', fullMessage);
+    },
+    onError: (error) => {
+      console.error('Stream error:', error);
+    }
+  });
+  
+  const handleSend = async () => {
+    if (!message.trim()) return;
+    
+    await sendMessage({
+      id: `msg-${Date.now()}`,
+      content: message,
+      role: 'user',
+      timestamp: Date.now()
+    });
+    
+    setMessage('');
+  };
+  
+  return (
+    <div>
+      <div style={{ height: '400px', overflowY: 'auto' }}>
+        {messages.map(msg => (
+          <div key={msg.id} style={{ 
+            padding: '8px',
+            backgroundColor: msg.role === 'user' ? '#e3f2fd' : '#f5f5f5',
+            margin: '4px 0'
+          }}>
+            <strong>{msg.role}:</strong> {msg.content}
+          </div>
+        ))}
+        
+        {isStreaming && currentStream && (
+          <div style={{ 
+            padding: '8px',
+            backgroundColor: '#f5f5f5',
+            margin: '4px 0',
+            opacity: 0.8
+          }}>
+            <strong>AI:</strong> {currentStream.content}
+            <span style={{ animation: 'blink 1s infinite' }}>▊</span>
+          </div>
+        )}
+      </div>
+      
+      <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+        <input
+          type="text"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+          placeholder="Type your message..."
+          style={{ flex: 1, padding: '8px' }}
+          disabled={isStreaming}
+        />
+        <button 
+          onClick={handleSend}
+          disabled={isStreaming || !message.trim()}
+          style={{ padding: '8px 16px' }}
+        >
+          {isStreaming ? 'Sending...' : 'Send'}
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+## Real-World Example: Chat Application
+
+Here's a complete chat application using kSync React hooks:
+
+```tsx
+import React, { useState } from 'react';
+import { 
+  KSyncProvider,
+  useKSync,
+  useKSyncEvent,
+  useKSyncLiveQuery,
+  useKSyncPresence,
+  useKSyncOptimistic
+} from '@klastra/ksync/react';
+import { ksync } from '@klastra/ksync';
+import { z } from 'zod';
+
+// Schemas
+const MessageSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  userId: z.string(),
+  username: z.string(),
+  timestamp: z.number(),
+  edited: z.boolean().default(false)
+});
+
+const UserSchema = z.object({
+  id: z.string(),
+  username: z.string(),
+  avatar: z.string().optional(),
+  status: z.enum(['online', 'away', 'busy'])
+});
+
+// Setup kSync instance
+const chatSync = ksync.create({
+  syncUrl: 'ws://localhost:3001/chat'
+});
+
+chatSync.defineSchema('message-sent', MessageSchema);
+chatSync.defineSchema('message-edited', MessageSchema.partial().extend({ id: z.string() }));
+chatSync.defineSchema('message-deleted', z.object({ id: z.string() }));
+chatSync.defineSchema('user-joined', UserSchema);
+
+// Message component with optimistic updates
+function Message({ message, currentUserId }: { message: any, currentUserId: string }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(message.content);
+  
+  const { execute: editMessage } = useKSyncOptimistic(
+    // Optimistic update
+    (msg) => ({
+      ...msg,
+      content: editText,
+      edited: true,
+      timestamp: Date.now()
+    }),
+    
+    // Actual update
+    async (ksync, optimisticMessage) => {
+      await ksync.send('message-edited', {
+        id: optimisticMessage.id,
+        content: optimisticMessage.content,
+        edited: true
+      });
+    }
+  );
+  
+  const { execute: deleteMessage } = useKSyncOptimistic(
+    // Optimistic update (hide message)
+    (msg) => ({ ...msg, _deleted: true }),
+    
+    // Actual deletion
+    async (ksync) => {
+      await ksync.send('message-deleted', { id: message.id });
+    }
+  );
+  
+  const handleEdit = async () => {
+    await editMessage(message);
+    setIsEditing(false);
+  };
+  
+  const handleDelete = async () => {
+    if (window.confirm('Delete this message?')) {
+      await deleteMessage(message);
+    }
+  };
+  
+  if (message._deleted) {
+    return null; // Hidden during optimistic delete
+  }
+  
+  const isOwner = message.userId === currentUserId;
+  
+  return (
+    <div style={{
+      padding: '12px',
+      margin: '8px 0',
+      backgroundColor: isOwner ? '#e3f2fd' : '#f5f5f5',
+      borderRadius: '8px',
+      opacity: message._optimistic ? 0.7 : 1
+    }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '4px'
+      }}>
+        <strong>{message.username}</strong>
+        <div style={{ fontSize: '12px', color: '#666' }}>
+          {new Date(message.timestamp).toLocaleTimeString()}
+          {message.edited && ' (edited)'}
+        </div>
+      </div>
+      
+      {isEditing ? (
+        <div>
+          <input
+            type="text"
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            style={{ width: '100%', padding: '4px' }}
+          />
+          <div style={{ marginTop: '8px' }}>
+            <button onClick={handleEdit} style={{ marginRight: '8px' }}>
+              Save
+            </button>
+            <button onClick={() => setIsEditing(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div>{message.content}</div>
+          {isOwner && (
+            <div style={{ marginTop: '8px' }}>
+              <button 
+                onClick={() => setIsEditing(true)}
+                style={{ marginRight: '8px', fontSize: '12px' }}
+              >
+                Edit
+              </button>
+              <button 
+                onClick={handleDelete}
+                style={{ fontSize: '12px', color: 'red' }}
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Message list component
+function MessageList({ currentUserId }: { currentUserId: string }) {
+  const { data: messages, loading } = useKSyncLiveQuery(
+    async (ksync) => {
+      const events = await ksync.getEvents({ 
+        type: 'message-sent',
+        limit: 100,
+        orderBy: 'timestamp'
+      });
+      return events.map(e => e.data);
+    },
+    []
+  );
+  
+  // Listen for new messages
+  useKSyncEvent('message-sent', (event) => {
+    // Messages are automatically updated by the live query
+    console.log('New message received:', event.data);
+  });
+  
+  if (loading) return <div>Loading messages...</div>;
+  
+  return (
+    <div style={{ 
+      height: '400px', 
+      overflowY: 'auto',
+      border: '1px solid #ccc',
+      padding: '16px'
+    }}>
+      {messages.map(message => (
+        <Message 
+          key={message.id} 
+          message={message} 
+          currentUserId={currentUserId}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Message input component
+function MessageInput({ currentUser }: { currentUser: any }) {
+  const [message, setMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const ksync = useKSync();
+  
+  const handleSend = async () => {
+    if (!message.trim() || isSending) return;
+    
+    setIsSending(true);
+    try {
+      await ksync.send('message-sent', {
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        content: message.trim(),
+        userId: currentUser.id,
+        username: currentUser.username,
+        timestamp: Date.now(),
+        edited: false
+      });
+      setMessage('');
+    } finally {
+      setIsSending(false);
+    }
+  };
+  
+  return (
+    <div style={{ 
+      display: 'flex', 
+      gap: '8px', 
+      marginTop: '16px',
+      padding: '16px',
+      borderTop: '1px solid #ccc'
+    }}>
+      <input
+        type="text"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+        placeholder="Type your message..."
+        style={{ 
+          flex: 1, 
+          padding: '8px',
+          border: '1px solid #ccc',
+          borderRadius: '4px'
+        }}
+        disabled={isSending}
+      />
+      <button 
+        onClick={handleSend}
+        disabled={isSending || !message.trim()}
+        style={{ 
+          padding: '8px 16px',
+          backgroundColor: '#2196f3',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: 'pointer'
+        }}
+      >
+        {isSending ? 'Sending...' : 'Send'}
+      </button>
+    </div>
+  );
+}
+
+// User list with presence
+function UserList() {
+  const { onlineUsers } = useKSyncPresence({
+    userId: 'current-user',
+    initialStatus: { status: 'online' }
+  });
+  
+  return (
+    <div style={{ 
+      width: '200px',
+      padding: '16px',
+      borderLeft: '1px solid #ccc'
+    }}>
+      <h3>Online Users ({onlineUsers.length})</h3>
+      {onlineUsers.map(user => (
+        <div key={user.userId} style={{ 
+          padding: '4px 0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: user.status === 'online' ? 'green' : 
+                           user.status === 'away' ? 'yellow' : 'red'
+          }} />
+          {user.username || user.userId}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Main chat component
+function ChatRoom() {
+  const currentUser = { 
+    id: 'user-123', 
+    username: 'Alice' 
+  };
+  
+  return (
+    <div style={{ 
+      height: '600px',
+      display: 'flex',
+      fontFamily: 'Arial, sans-serif'
+    }}>
+      <div style={{ flex: 1 }}>
+        <h2 style={{ padding: '16px', margin: 0, borderBottom: '1px solid #ccc' }}>
+          Chat Room
+        </h2>
+        <MessageList currentUserId={currentUser.id} />
+        <MessageInput currentUser={currentUser} />
+      </div>
+      <UserList />
+    </div>
+  );
+}
+
+// App with provider
+function App() {
+  return (
+    <KSyncProvider instance={chatSync}>
+      <div style={{ padding: '20px' }}>
+        <h1>kSync Chat Demo</h1>
+        <ChatRoom />
+      </div>
+    </KSyncProvider>
+  );
+}
+
+export default App;
+```
+
+## Hook Reference
+
+### useKSync()
+Returns the kSync instance from context.
+
+### useKSyncEvent(eventType, handler, deps?)
+Subscribes to events and calls handler when they occur.
+
+### useKSyncLiveQuery(queryFn, deps)
+Executes a live query that automatically updates when dependencies change.
+
+### useKSyncOptimistic(optimisticFn, updateFn, rollbackFn?)
+Handles optimistic updates with automatic rollback on errors.
+
+### useKSyncPresence(config)
+Manages real-time user presence tracking.
+
+### useKSyncStream(config)
+Handles streaming data (perfect for AI chat applications).
+
+### useKSyncContext()
+Alternative to useKSync() for accessing the context directly.
+
+## Best Practices
+
+1. **Memoize query functions**: Use `useCallback` for expensive queries
+2. **Minimize dependencies**: Only include necessary dependencies in hooks
+3. **Handle loading states**: Always show loading indicators for better UX
+4. **Error boundaries**: Wrap components with error boundaries for better error handling
+5. **Optimistic updates**: Use for better perceived performance
+6. **Cleanup**: Hooks automatically handle cleanup, but be mindful of effect dependencies
+
+The React hooks make building real-time applications with kSync incredibly simple and performant! 

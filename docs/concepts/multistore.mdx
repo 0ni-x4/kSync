@@ -1,0 +1,579 @@
+---
+title: "Multi-Store Architecture"
+description: "Manage multiple isolated data stores with cross-store operations and derived stores"
+---
+
+# Multi-Store Architecture
+
+kSync's multi-store architecture allows you to manage multiple isolated data stores within a single application. This is perfect for complex apps that need to organize data by domain, user, or feature while still enabling cross-store operations.
+
+## What is Multi-Store?
+
+Multi-store architecture provides:
+- **🏪 Isolated data domains** - Keep different data types completely separate
+- **🔗 Cross-store operations** - Share data and operations between stores
+- **📊 Derived stores** - Create computed stores from multiple sources
+- **⚡ Shared synchronization** - Optimize network usage with shared connections
+- **🔒 Per-store security** - Different access controls per store
+- **📈 Independent scaling** - Scale different stores independently
+
+## Basic Setup
+
+```typescript
+import { ksync } from '@klastra/ksync';
+import { z } from 'zod';
+
+// Create a multi-store manager
+const multistore = ksync.createMultistore({
+  sharedSync: true, // Share sync connections across stores
+  syncMode: 'websocket' // or 'git-sync'
+});
+
+// Define schemas for different domains
+const UserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string()
+});
+
+const ChatSchema = z.object({
+  id: z.string(),
+  message: z.string(),
+  userId: z.string(),
+  timestamp: z.number()
+});
+
+const ProjectSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  ownerId: z.string()
+});
+```
+
+## Creating and Managing Stores
+
+```typescript
+// Create individual stores
+const userStore = await multistore.createStore('users', {
+  schema: { user: UserSchema },
+  syncUrl: 'ws://localhost:3001/users'
+});
+
+const chatStore = await multistore.createStore('chat', {
+  schema: { message: ChatSchema },
+  syncUrl: 'ws://localhost:3001/chat',
+  ephemeral: true // Don't persist chat messages locally
+});
+
+const projectStore = await multistore.createStore('projects', {
+  schema: { project: ProjectSchema },
+  syncUrl: 'ws://localhost:3001/projects',
+  permissions: ['read', 'write'] // Custom permissions
+});
+
+// Access stores
+const users = multistore.getStore('users');
+const chat = multistore.getStore('chat');
+const projects = multistore.getStore('projects');
+```
+
+## Store Operations
+
+Each store operates independently:
+
+```typescript
+// User operations
+await users.send('user-created', {
+  id: 'user-123',
+  name: 'Alice',
+  email: 'alice@example.com'
+});
+
+// Chat operations  
+await chat.send('message-sent', {
+  id: 'msg-456',
+  message: 'Hello everyone!',
+  userId: 'user-123',
+  timestamp: Date.now()
+});
+
+// Project operations
+await projects.send('project-created', {
+  id: 'proj-789',
+  title: 'New Website',
+  description: 'Building a new company website',
+  ownerId: 'user-123'
+});
+
+// Each store has independent event listeners
+users.on('user-created', (event) => {
+  console.log('New user:', event.data.name);
+});
+
+chat.on('message-sent', (event) => {
+  console.log('New message:', event.data.message);
+});
+```
+
+## Cross-Store Operations
+
+Share data and operations between stores:
+
+```typescript
+// Broadcast to all stores
+await multistore.broadcast('user-status-changed', {
+  userId: 'user-123',
+  status: 'online'
+});
+
+// Listen to broadcasts in specific stores
+chat.on('user-status-changed', (event) => {
+  updateUserStatus(event.data.userId, event.data.status);
+});
+
+projects.on('user-status-changed', (event) => {
+  updateCollaboratorStatus(event.data.userId, event.data.status);
+});
+
+// Cross-store queries
+const userProjects = await multistore.crossQuery({
+  from: 'projects',
+  join: 'users',
+  where: { 'projects.ownerId': 'users.id' },
+  select: ['projects.*', 'users.name as ownerName']
+});
+```
+
+## Derived Stores
+
+Create computed stores that derive from multiple sources:
+
+```typescript
+// Create a derived store for user activity
+const activityStore = await multistore.createDerivedStore('activity', {
+  sources: ['users', 'chat', 'projects'],
+  
+  // Derive function runs when source stores change
+  derive: async (stores) => {
+    const { users, chat, projects } = stores;
+    
+    // Get latest user activity across all stores
+    const userActivity = new Map();
+    
+    // Process user events
+    const userEvents = await users.getEvents({ limit: 100 });
+    userEvents.forEach(event => {
+      const userId = event.data.id;
+      userActivity.set(userId, {
+        lastSeen: event.timestamp,
+        type: 'user-action',
+        action: event.type
+      });
+    });
+    
+    // Process chat events
+    const chatEvents = await chat.getEvents({ limit: 100 });
+    chatEvents.forEach(event => {
+      const userId = event.data.userId;
+      const existing = userActivity.get(userId);
+      if (!existing || event.timestamp > existing.lastSeen) {
+        userActivity.set(userId, {
+          lastSeen: event.timestamp,
+          type: 'chat-message',
+          action: event.type
+        });
+      }
+    });
+    
+    // Process project events
+    const projectEvents = await projects.getEvents({ limit: 100 });
+    projectEvents.forEach(event => {
+      const userId = event.data.ownerId;
+      const existing = userActivity.get(userId);
+      if (!existing || event.timestamp > existing.lastSeen) {
+        userActivity.set(userId, {
+          lastSeen: event.timestamp,
+          type: 'project-action',
+          action: event.type
+        });
+      }
+    });
+    
+    return Array.from(userActivity.entries()).map(([userId, activity]) => ({
+      userId,
+      ...activity
+    }));
+  },
+  
+  // Recompute triggers
+  triggers: ['user-*', 'message-*', 'project-*'], // Event patterns to watch
+  debounce: 1000 // Wait 1s before recomputing
+});
+
+// Use derived store
+activityStore.on('derived-updated', (data) => {
+  console.log('User activity updated:', data);
+  updateActivityDashboard(data);
+});
+```
+
+## Store Synchronization
+
+Control how different stores sync:
+
+```typescript
+// Individual store sync
+await userStore.sync(); // Sync just the user store
+
+// Sync all stores
+await multistore.syncAll();
+
+// Selective sync
+await multistore.sync(['users', 'projects']); // Skip chat store
+
+// Configure sync behavior per store
+const priorityStore = await multistore.createStore('priority', {
+  schema: { urgent: z.object({ id: z.string(), data: z.any() }) },
+  sync: {
+    priority: 'high', // Sync this store first
+    interval: 1000,   // Sync every second
+    retries: 5        // More retries for important data
+  }
+});
+
+const backgroundStore = await multistore.createStore('analytics', {
+  schema: { event: z.object({ type: z.string(), data: z.any() }) },
+  sync: {
+    priority: 'low',   // Sync this store last
+    interval: 30000,   // Sync every 30 seconds
+    retries: 1         // Fewer retries for analytics
+  }
+});
+```
+
+## Store Lifecycle Management
+
+```typescript
+// Get store information
+const storeInfo = multistore.getStoreInfo('users');
+console.log(storeInfo);
+/*
+{
+  name: 'users',
+  eventCount: 1250,
+  lastSync: 1703123456789,
+  syncStatus: 'connected',
+  size: '2.5MB'
+}
+*/
+
+// List all stores
+const allStores = multistore.listStores();
+console.log(allStores); // ['users', 'chat', 'projects', 'activity']
+
+// Check store status
+const isConnected = await multistore.isStoreConnected('users');
+const syncStatus = await multistore.getStoreSyncStatus('users');
+
+// Pause/resume stores
+await multistore.pauseStore('chat');  // Stop syncing chat
+await multistore.resumeStore('chat'); // Resume syncing chat
+
+// Remove stores (careful!)
+await multistore.removeStore('analytics'); // Remove store and all data
+```
+
+## Real-World Example: Team Collaboration App
+
+```typescript
+import { ksync } from '@klastra/ksync';
+import { z } from 'zod';
+
+// Schemas
+const UserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  avatar: z.string().optional(),
+  status: z.enum(['online', 'away', 'offline'])
+});
+
+const WorkspaceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  members: z.array(z.string()),
+  createdAt: z.number()
+});
+
+const DocumentSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  content: z.string(),
+  workspaceId: z.string(),
+  lastEditedBy: z.string(),
+  lastEditedAt: z.number()
+});
+
+const CommentSchema = z.object({
+  id: z.string(),
+  documentId: z.string(),
+  userId: z.string(),
+  content: z.string(),
+  createdAt: z.number()
+});
+
+// Setup multistore
+class TeamCollaborationApp {
+  private multistore: KSyncMultistore;
+  
+  constructor() {
+    this.multistore = ksync.createMultistore({
+      sharedSync: true,
+      syncMode: 'websocket'
+    });
+    this.initializeStores();
+  }
+  
+  private async initializeStores() {
+    // Core user management
+    await this.multistore.createStore('users', {
+      schema: { user: UserSchema },
+      syncUrl: 'ws://api.example.com/users',
+      persistent: true
+    });
+    
+    // Workspace organization
+    await this.multistore.createStore('workspaces', {
+      schema: { workspace: WorkspaceSchema },
+      syncUrl: 'ws://api.example.com/workspaces',
+      persistent: true
+    });
+    
+    // Document collaboration
+    await this.multistore.createStore('documents', {
+      schema: { document: DocumentSchema },
+      syncUrl: 'ws://api.example.com/documents',
+      persistent: true,
+      crdtEnabled: true // Enable collaborative editing
+    });
+    
+    // Comments and discussions
+    await this.multistore.createStore('comments', {
+      schema: { comment: CommentSchema },
+      syncUrl: 'ws://api.example.com/comments',
+      persistent: true
+    });
+    
+    // Real-time activity feed (derived)
+    await this.multistore.createDerivedStore('activity', {
+      sources: ['users', 'documents', 'comments'],
+      derive: this.deriveActivityFeed.bind(this),
+      triggers: ['user-*', 'document-*', 'comment-*'],
+      debounce: 500
+    });
+    
+    // Setup cross-store listeners
+    this.setupCrossStoreListeners();
+  }
+  
+  private async deriveActivityFeed(stores: Record<string, any>) {
+    const activities = [];
+    
+    // Recent document edits
+    const documentEvents = await stores.documents.getEvents({
+      types: ['document-updated'],
+      limit: 50,
+      since: Date.now() - 3600000 // Last hour
+    });
+    
+    documentEvents.forEach(event => {
+      activities.push({
+        type: 'document-edit',
+        userId: event.data.lastEditedBy,
+        documentId: event.data.id,
+        timestamp: event.timestamp,
+        summary: `Edited "${event.data.title}"`
+      });
+    });
+    
+    // Recent comments
+    const commentEvents = await stores.comments.getEvents({
+      types: ['comment-created'],
+      limit: 50,
+      since: Date.now() - 3600000
+    });
+    
+    commentEvents.forEach(event => {
+      activities.push({
+        type: 'comment',
+        userId: event.data.userId,
+        documentId: event.data.documentId,
+        timestamp: event.timestamp,
+        summary: 'Added a comment'
+      });
+    });
+    
+    // Sort by timestamp
+    return activities.sort((a, b) => b.timestamp - a.timestamp);
+  }
+  
+  private setupCrossStoreListeners() {
+    // When user status changes, broadcast to all stores
+    this.multistore.getStore('users').on('user-status-changed', async (event) => {
+      await this.multistore.broadcast('user-presence-update', {
+        userId: event.data.id,
+        status: event.data.status,
+        timestamp: Date.now()
+      });
+    });
+    
+    // When document is deleted, clean up comments
+    this.multistore.getStore('documents').on('document-deleted', async (event) => {
+      const comments = this.multistore.getStore('comments');
+      await comments.send('comments-bulk-delete', {
+        documentId: event.data.id
+      });
+    });
+  }
+  
+  // Public API methods
+  async createWorkspace(name: string, creatorId: string) {
+    const workspaces = this.multistore.getStore('workspaces');
+    const workspaceId = `ws-${Date.now()}`;
+    
+    await workspaces.send('workspace-created', {
+      id: workspaceId,
+      name,
+      members: [creatorId],
+      createdAt: Date.now()
+    });
+    
+    return workspaceId;
+  }
+  
+  async createDocument(title: string, workspaceId: string, userId: string) {
+    const documents = this.multistore.getStore('documents');
+    const documentId = `doc-${Date.now()}`;
+    
+    await documents.send('document-created', {
+      id: documentId,
+      title,
+      content: '',
+      workspaceId,
+      lastEditedBy: userId,
+      lastEditedAt: Date.now()
+    });
+    
+    return documentId;
+  }
+  
+  async addComment(documentId: string, userId: string, content: string) {
+    const comments = this.multistore.getStore('comments');
+    
+    await comments.send('comment-created', {
+      id: `comment-${Date.now()}`,
+      documentId,
+      userId,
+      content,
+      createdAt: Date.now()
+    });
+  }
+  
+  // Get real-time activity feed
+  getActivityFeed() {
+    return this.multistore.getDerivedStore('activity');
+  }
+  
+  // Get workspace with related data
+  async getWorkspaceDetails(workspaceId: string) {
+    const [workspace, documents, members] = await Promise.all([
+      this.multistore.getStore('workspaces').query({
+        where: { id: workspaceId }
+      }),
+      this.multistore.getStore('documents').query({
+        where: { workspaceId }
+      }),
+      this.multistore.crossQuery({
+        from: 'workspaces',
+        join: 'users',
+        where: { 'workspaces.id': workspaceId },
+        select: ['users.*']
+      })
+    ]);
+    
+    return {
+      workspace: workspace[0],
+      documents,
+      members
+    };
+  }
+  
+  // Cleanup
+  async destroy() {
+    await this.multistore.disconnectAll();
+  }
+}
+
+// Usage
+const app = new TeamCollaborationApp();
+
+// Create workspace and document
+const workspaceId = await app.createWorkspace('My Team', 'user-123');
+const documentId = await app.createDocument('Project Plan', workspaceId, 'user-123');
+
+// Add comment
+await app.addComment(documentId, 'user-456', 'Great plan! Let me add some thoughts...');
+
+// Listen to activity feed
+const activityFeed = app.getActivityFeed();
+activityFeed.on('derived-updated', (activities) => {
+  console.log('New activity:', activities[0]);
+  updateActivityUI(activities);
+});
+```
+
+## Performance Considerations
+
+### Store Partitioning Strategy
+
+```typescript
+// Partition by feature domain
+const multistore = ksync.createMultistore();
+
+// Core application data (always loaded)
+await multistore.createStore('core', { ... });
+
+// Feature-specific stores (lazy loaded)
+await multistore.createStore('analytics', { lazy: true });
+await multistore.createStore('admin', { lazy: true });
+
+// User-specific stores (per-user isolation)
+await multistore.createStore(`user-${userId}`, { ... });
+```
+
+### Memory Management
+
+```typescript
+// Configure memory limits per store
+await multistore.createStore('large-data', {
+  schema: { item: LargeItemSchema },
+  limits: {
+    maxEvents: 10000,    // Limit event history
+    maxMemory: '100MB',  // Memory limit
+    ttl: 3600000        // Auto-expire old data
+  }
+});
+
+// Monitor and clean up
+setInterval(async () => {
+  const stats = await multistore.getStats();
+  console.log('Memory usage:', stats.totalMemory);
+  
+  if (stats.totalMemory > 500 * 1024 * 1024) { // 500MB
+    await multistore.cleanup(); // Clean up expired data
+  }
+}, 60000);
+```
+
+Multi-store architecture makes it easy to build complex, scalable applications while keeping concerns properly separated and synchronized. 

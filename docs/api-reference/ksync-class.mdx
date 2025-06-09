@@ -1,0 +1,364 @@
+---
+title: "KSync Class"
+description: "Complete API reference for the KSync class - the main interface for real-time data synchronization"
+---
+
+# KSync Class
+
+The `KSync` class is the main interface for creating and managing real-time synchronized data stores. It provides methods for event handling, storage management, and synchronization.
+
+## Constructor
+
+### `new KSync(options?)`
+
+Creates a new KSync instance.
+
+```typescript
+const ksync = new KSync({
+  storage: new InMemoryStorage(),
+  syncClient: new WebSocketSyncClient('ws://localhost:8080'),
+  mode: 'event-sourcing' // or 'crdt'
+});
+```
+
+**Parameters:**
+- `options` (optional): Configuration object
+  - `storage`: Storage adapter for persisting events
+  - `syncClient`: Client for synchronizing with remote peers
+  - `mode`: Synchronization mode ('event-sourcing' | 'crdt')
+
+## Properties
+
+### `events`
+- **Type:** `Map<string, any>`
+- **Description:** Read-only map of all events in the store
+- **Example:**
+```typescript
+console.log(ksync.events.size); // Number of events
+```
+
+### `state`
+- **Type:** `any`
+- **Description:** Current materialized state of the store
+- **Example:**
+```typescript
+console.log(ksync.state); // Current state object
+```
+
+### `version`
+- **Type:** `number`
+- **Description:** Current version/sequence number of the store
+- **Example:**
+```typescript
+console.log(ksync.version); // e.g., 42
+```
+
+## Core Methods
+
+### `emit(eventType, data)`
+
+Emits a new event to the store.
+
+```typescript
+ksync.emit('user_created', { 
+  id: '123', 
+  name: 'John Doe', 
+  email: 'john@example.com' 
+});
+```
+
+**Parameters:**
+- `eventType` (string): Type of the event
+- `data` (any): Event payload data
+
+**Returns:** `Promise<void>`
+
+### `on(eventType, handler)`
+
+Registers an event listener.
+
+```typescript
+ksync.on('user_created', (event) => {
+  console.log('New user:', event.data);
+});
+
+// Listen to all events
+ksync.on('*', (event) => {
+  console.log('Event:', event.type, event.data);
+});
+```
+
+**Parameters:**
+- `eventType` (string): Event type to listen for, or '*' for all events
+- `handler` (function): Event handler function
+
+**Returns:** `() => void` (unsubscribe function)
+
+### `off(eventType, handler)`
+
+Removes an event listener.
+
+```typescript
+const unsubscribe = ksync.on('user_created', handler);
+ksync.off('user_created', handler);
+// or simply call unsubscribe()
+```
+
+**Parameters:**
+- `eventType` (string): Event type
+- `handler` (function): Handler function to remove
+
+### `materialize(materializer)`
+
+Sets up a materializer function to compute derived state.
+
+```typescript
+ksync.materialize((events) => {
+  const state = { users: [], posts: [] };
+  
+  for (const event of events) {
+    switch (event.type) {
+      case 'user_created':
+        state.users.push(event.data);
+        break;
+      case 'post_created':
+        state.posts.push(event.data);
+        break;
+    }
+  }
+  
+  return state;
+});
+```
+
+**Parameters:**
+- `materializer` (function): Function that takes events and returns computed state
+
+### `query(queryFn)`
+
+Queries the current state.
+
+```typescript
+const activeUsers = ksync.query((state) => 
+  state.users.filter(user => user.active)
+);
+```
+
+**Parameters:**
+- `queryFn` (function): Function that receives current state and returns filtered data
+
+**Returns:** Query result
+
+## Synchronization Methods
+
+### `sync()`
+
+Manually triggers synchronization with remote peers.
+
+```typescript
+await ksync.sync();
+```
+
+**Returns:** `Promise<void>`
+
+### `connect()`
+
+Connects to the sync server (if using WebSocket sync).
+
+```typescript
+await ksync.connect();
+```
+
+**Returns:** `Promise<void>`
+
+### `disconnect()`
+
+Disconnects from the sync server.
+
+```typescript
+await ksync.disconnect();
+```
+
+**Returns:** `Promise<void>`
+
+## CRDT Methods
+
+When using CRDT mode, additional methods are available:
+
+### `createLWWRegister(key, initialValue)`
+
+Creates a Last-Write-Wins register.
+
+```typescript
+const userStatus = ksync.createLWWRegister('user_status', 'offline');
+userStatus.set('online');
+console.log(userStatus.get()); // 'online'
+```
+
+### `createGSet(key, initialItems?)`
+
+Creates a Grow-only Set.
+
+```typescript
+const tags = ksync.createGSet('tags', new Set(['javascript']));
+tags.add('typescript');
+tags.add('react');
+console.log(tags.toArray()); // ['javascript', 'typescript', 'react']
+```
+
+### `createGCounter(key, initialValue?)`
+
+Creates a Grow-only Counter.
+
+```typescript
+const likes = ksync.createGCounter('likes', 0);
+likes.increment(5);
+console.log(likes.value()); // 5
+```
+
+### `getCRDT(key)`
+
+Retrieves an existing CRDT by key.
+
+```typescript
+const existingCounter = ksync.getCRDT('likes');
+```
+
+## Storage Methods
+
+### `persist()`
+
+Manually triggers persistence to storage.
+
+```typescript
+await ksync.persist();
+```
+
+**Returns:** `Promise<void>`
+
+### `load()`
+
+Loads events from storage.
+
+```typescript
+await ksync.load();
+```
+
+**Returns:** `Promise<void>`
+
+### `clear()`
+
+Clears all events and resets the store.
+
+```typescript
+await ksync.clear();
+```
+
+**Returns:** `Promise<void>`
+
+## Event Lifecycle
+
+### Event Object Structure
+
+Every event in kSync has the following structure:
+
+```typescript
+interface Event {
+  id: string;           // Unique event identifier
+  type: string;         // Event type
+  data: any;           // Event payload
+  timestamp: number;    // When the event occurred
+  version: number;      // Event sequence number
+  actor?: string;       // Who created the event
+  metadata?: any;       // Additional metadata
+}
+```
+
+### Event Flow
+
+1. **Emit**: `emit()` creates a new event
+2. **Validate**: Event is validated and assigned an ID/version
+3. **Store**: Event is added to the event store
+4. **Materialize**: State is recomputed using the materializer
+5. **Notify**: Event listeners are triggered
+6. **Persist**: Event is saved to storage (if configured)
+7. **Sync**: Event is sent to remote peers (if connected)
+
+## Error Handling
+
+kSync methods can throw the following errors:
+
+```typescript
+try {
+  await ksync.emit('invalid_event', null);
+} catch (error) {
+  if (error instanceof ValidationError) {
+    console.log('Event validation failed:', error.message);
+  } else if (error instanceof StorageError) {
+    console.log('Storage error:', error.message);
+  } else if (error instanceof SyncError) {
+    console.log('Sync error:', error.message);
+  }
+}
+```
+
+## Complete Example
+
+```typescript
+import { KSync, InMemoryStorage, WebSocketSyncClient } from 'ksync';
+
+// Create kSync instance
+const ksync = new KSync({
+  storage: new InMemoryStorage(),
+  syncClient: new WebSocketSyncClient('ws://localhost:8080')
+});
+
+// Set up materializer
+ksync.materialize((events) => {
+  const state = { users: [], messages: [] };
+  
+  for (const event of events) {
+    switch (event.type) {
+      case 'user_joined':
+        state.users.push(event.data);
+        break;
+      case 'message_sent':
+        state.messages.push(event.data);
+        break;
+      case 'user_left':
+        state.users = state.users.filter(u => u.id !== event.data.userId);
+        break;
+    }
+  }
+  
+  return state;
+});
+
+// Listen for events
+ksync.on('user_joined', (event) => {
+  console.log(`${event.data.name} joined the chat`);
+});
+
+ksync.on('message_sent', (event) => {
+  console.log(`${event.data.author}: ${event.data.text}`);
+});
+
+// Connect and start using
+await ksync.connect();
+
+// Emit events
+await ksync.emit('user_joined', { 
+  id: '1', 
+  name: 'Alice' 
+});
+
+await ksync.emit('message_sent', { 
+  id: '1', 
+  author: 'Alice', 
+  text: 'Hello everyone!' 
+});
+
+// Query current state
+const currentUsers = ksync.query(state => state.users);
+console.log('Current users:', currentUsers);
+``` 

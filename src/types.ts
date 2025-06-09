@@ -126,4 +126,10 @@ export interface PresenceOptions {
 // Event listener types
 export type EventListener<T = any> = (event: KSyncEvent<T>) => void;
 export type StreamListener = (chunk: StreamChunk) => void;
-export type PresenceListener = (presence: PresenceState) => void; 
+export type PresenceListener = (presence: PresenceState) => void;
+
+// Extended types for new features
+export interface CRDTConfig {
+  enableCRDT?: boolean;
+  crdtTypes?: Record<string, 'lww' | 'gset' | 'gcounter' | 'map'>;
+} 

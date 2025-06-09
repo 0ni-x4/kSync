@@ -1,0 +1,114 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "almond",
+  "name": "kSync",
+  "colors": {
+    "primary": "#000114",
+    "light": "#00FFF2",
+    "dark": "#00B8BE"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/events",
+              "concepts/storage",
+              "concepts/crdt",
+              "concepts/drizzle-integration",
+              "concepts/multistore",
+              "concepts/git-sync"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/basic-usage",
+              "guides/react-hooks"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "API Documentation",
+            "pages": [
+              "api-reference/introduction",
+              "api-reference/ksync-class",
+              "api-reference/storage",
+              "api-reference/sync-client",
+              "api-reference/types"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Example Applications",
+            "pages": [
+              "examples/introduction",
+              "examples/chat-app",
+              "examples/todo-sync",
+              "examples/ai-streaming",
+              "examples/multiplayer-game"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/klastra-ai/ksync"
+        },
+        {
+          "anchor": "Discord", 
+          "href": "https://discord.gg/klastra"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.png",
+    "dark": "/logo/dark.png",
+    "height": 40,
+    "width": 120
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Support",
+        "href": "mailto:support@klastra.ai"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "GitHub",
+      "href": "https://github.com/klastra-ai/ksync"
+    }
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/klastra_ai",
+      "github": "https://github.com/klastra-ai/ksync"
+    }
+  }
+}

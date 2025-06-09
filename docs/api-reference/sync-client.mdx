@@ -1,0 +1,495 @@
+---
+title: "Sync Clients"
+description: "API reference for kSync synchronization clients - real-time WebSocket and Git-like sync"
+---
+
+# Sync Clients
+
+kSync provides multiple synchronization clients to sync data between instances. Choose between real-time WebSocket synchronization or Git-like pull/push synchronization.
+
+## Sync Client Interface
+
+```typescript
+interface SyncClient {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  send(event: Event): Promise<void>;
+  on(eventType: string, handler: Function): () => void;
+  off(eventType: string, handler: Function): void;
+}
+```
+
+## WebSocketSyncClient
+
+Real-time bidirectional synchronization using WebSockets.
+
+### Constructor
+
+```typescript
+import { WebSocketSyncClient } from 'ksync';
+
+const syncClient = new WebSocketSyncClient(url, options?);
+```
+
+**Parameters:**
+- `url` (string): WebSocket server URL
+- `options` (optional):
+  - `auth?`: Authentication configuration
+  - `reconnect?` (boolean): Auto-reconnect on disconnect (default: true)
+  - `heartbeat?` (number): Heartbeat interval in ms (default: 30000)
+  - `compression?` (boolean): Enable compression (default: false)
+
+### Authentication
+
+```typescript
+const syncClient = new WebSocketSyncClient('ws://localhost:8080', {
+  auth: {
+    type: 'jwt',
+    token: 'your-jwt-token'
+  }
+});
+
+// Or use API key
+const syncClient = new WebSocketSyncClient('ws://localhost:8080', {
+  auth: {
+    type: 'apikey',
+    key: 'your-api-key'
+  }
+});
+```
+
+### Methods
+
+#### `connect()`
+
+Connects to the WebSocket server.
+
+```typescript
+await syncClient.connect();
+console.log('Connected to sync server');
+```
+
+#### `disconnect()`
+
+Disconnects from the WebSocket server.
+
+```typescript
+await syncClient.disconnect();
+console.log('Disconnected from sync server');
+```
+
+#### `send(event)`
+
+Sends an event to connected peers.
+
+```typescript
+await syncClient.send({
+  id: '123',
+  type: 'user_created',
+  data: { name: 'John' },
+  timestamp: Date.now(),
+  version: 1
+});
+```
+
+### Event Listeners
+
+```typescript
+// Connection events
+syncClient.on('connected', () => {
+  console.log('Connected to server');
+});
+
+syncClient.on('disconnected', () => {
+  console.log('Disconnected from server');
+});
+
+syncClient.on('reconnecting', (attempt) => {
+  console.log(`Reconnecting... attempt ${attempt}`);
+});
+
+// Data events
+syncClient.on('event', (event) => {
+  console.log('Received event:', event);
+});
+
+syncClient.on('sync', (events) => {
+  console.log(`Synced ${events.length} events`);
+});
+
+// Error events
+syncClient.on('error', (error) => {
+  console.error('Sync error:', error);
+});
+```
+
+### Complete Example
+
+```typescript
+import { KSync, InMemoryStorage, WebSocketSyncClient } from 'ksync';
+
+const ksync = new KSync({
+  storage: new InMemoryStorage(),
+  syncClient: new WebSocketSyncClient('ws://localhost:8080', {
+    auth: { type: 'jwt', token: 'your-token' },
+    reconnect: true,
+    heartbeat: 30000
+  })
+});
+
+// Connect and start syncing
+await ksync.connect();
+
+// Events will automatically sync in real-time
+await ksync.emit('user_action', { action: 'click', button: 'submit' });
+```
+
+## GitSyncClient
+
+Git-like pull/push synchronization for offline-first applications.
+
+### Constructor
+
+```typescript
+import { GitSyncClient } from 'ksync';
+
+const syncClient = new GitSyncClient(options);
+```
+
+**Options:**
+- `url` (string): Server URL for sync operations
+- `auth?`: Authentication configuration
+- `branch?` (string): Branch name (default: 'main')
+- `pullInterval?` (number): Auto-pull interval in ms (default: 0 = disabled)
+- `compression?` (boolean): Enable compression (default: true)
+
+### Methods
+
+#### `pull()`
+
+Pulls latest events from the server.
+
+```typescript
+const result = await syncClient.pull();
+console.log(`Pulled ${result.newEvents.length} new events`);
+console.log(`Conflicts: ${result.conflicts.length}`);
+```
+
+**Returns:**
+```typescript
+{
+  newEvents: Event[];
+  conflicts: Conflict[];
+  serverVersion: number;
+}
+```
+
+#### `push()`
+
+Pushes local events to the server.
+
+```typescript
+const result = await syncClient.push();
+console.log(`Pushed ${result.pushedEvents.length} events`);
+```
+
+**Returns:**
+```typescript
+{
+  pushedEvents: Event[];
+  rejectedEvents: Event[];
+  serverVersion: number;
+}
+```
+
+#### `sync()`
+
+Performs a full sync (pull + push).
+
+```typescript
+const result = await syncClient.sync();
+console.log('Sync complete:', result);
+```
+
+#### `clone(url, branch?)`
+
+Clones a repository from a remote server.
+
+```typescript
+await syncClient.clone('https://sync.example.com/repo', 'main');
+```
+
+### Conflict Resolution
+
+Handle merge conflicts when events conflict:
+
+```typescript
+syncClient.on('conflict', (conflict) => {
+  console.log('Conflict detected:', conflict);
+  
+  // Auto-resolve using last-write-wins
+  if (conflict.type === 'concurrent-edit') {
+    return conflict.theirs; // Use server version
+  }
+  
+  // Custom resolution logic
+  return mergeEvents(conflict.ours, conflict.theirs);
+});
+```
+
+### Branching
+
+Work with multiple branches:
+
+```typescript
+// Create a new branch
+await syncClient.createBranch('feature-branch');
+
+// Switch branches
+await syncClient.checkout('feature-branch');
+
+// Merge branches
+await syncClient.merge('main', 'feature-branch');
+
+// List branches
+const branches = await syncClient.listBranches();
+```
+
+### Complete Example
+
+```typescript
+import { KSync, FileStorage, GitSyncClient } from 'ksync';
+
+const ksync = new KSync({
+  storage: new FileStorage('./local-events.json'),
+  syncClient: new GitSyncClient({
+    url: 'https://sync.example.com/my-repo',
+    auth: { type: 'token', token: 'github-token' },
+    branch: 'main',
+    pullInterval: 60000 // Pull every minute
+  })
+});
+
+// Manual sync operations
+await ksync.pull(); // Get latest changes
+await ksync.emit('local_change', { data: 'new data' });
+await ksync.push(); // Send changes to server
+
+// Auto-sync mode
+ksync.enableAutoSync({
+  pushInterval: 30000,  // Push every 30 seconds
+  pullInterval: 60000   // Pull every minute
+});
+```
+
+## P2PSyncClient
+
+Peer-to-peer synchronization without a central server.
+
+### Constructor
+
+```typescript
+import { P2PSyncClient } from 'ksync';
+
+const syncClient = new P2PSyncClient(options);
+```
+
+**Options:**
+- `peerId` (string): Unique identifier for this peer
+- `discoveryMethod` ('mdns' | 'dht' | 'manual'): How to discover peers
+- `port?` (number): Port for P2P communication
+- `encryption?` (boolean): Enable end-to-end encryption
+
+### Methods
+
+#### `start()`
+
+Starts the P2P node and begins peer discovery.
+
+```typescript
+await syncClient.start();
+console.log('P2P sync started');
+```
+
+#### `connectToPeer(peerId)`
+
+Manually connect to a specific peer.
+
+```typescript
+await syncClient.connectToPeer('peer-123');
+```
+
+#### `broadcast(event)`
+
+Broadcasts an event to all connected peers.
+
+```typescript
+await syncClient.broadcast(event);
+```
+
+### Example
+
+```typescript
+import { KSync, InMemoryStorage, P2PSyncClient } from 'ksync';
+
+const ksync = new KSync({
+  storage: new InMemoryStorage(),
+  syncClient: new P2PSyncClient({
+    peerId: 'my-unique-peer-id',
+    discoveryMethod: 'mdns',
+    port: 9000,
+    encryption: true
+  })
+});
+
+await ksync.start();
+
+// Events automatically sync with discovered peers
+await ksync.emit('peer_event', { data: 'hello peers' });
+```
+
+## Sync Strategies
+
+Configure different synchronization strategies:
+
+### Event-Level Sync
+
+Sync individual events as they occur:
+
+```typescript
+const syncClient = new WebSocketSyncClient(url, {
+  strategy: 'event-level',
+  batchSize: 1
+});
+```
+
+### Batch Sync
+
+Sync events in batches for better performance:
+
+```typescript
+const syncClient = new WebSocketSyncClient(url, {
+  strategy: 'batch',
+  batchSize: 50,
+  batchInterval: 5000 // 5 seconds
+});
+```
+
+### State-Based Sync
+
+Sync entire state snapshots:
+
+```typescript
+const syncClient = new WebSocketSyncClient(url, {
+  strategy: 'state-based',
+  snapshotInterval: 300000 // 5 minutes
+});
+```
+
+## Sync Filters
+
+Filter which events to sync:
+
+```typescript
+const syncClient = new WebSocketSyncClient(url, {
+  filter: (event) => {
+    // Only sync public events
+    return !event.data.private;
+  }
+});
+
+// Or use predefined filters
+const syncClient = new WebSocketSyncClient(url, {
+  filter: 'public-only' // Built-in filter
+});
+```
+
+## Sync Middleware
+
+Add middleware to transform events during sync:
+
+```typescript
+syncClient.use('outgoing', (event) => {
+  // Encrypt sensitive data before sending
+  if (event.type === 'user_data') {
+    event.data = encrypt(event.data);
+  }
+  return event;
+});
+
+syncClient.use('incoming', (event) => {
+  // Decrypt data when receiving
+  if (event.type === 'user_data') {
+    event.data = decrypt(event.data);
+  }
+  return event;
+});
+```
+
+## Monitoring and Debugging
+
+Monitor sync performance and debug issues:
+
+```typescript
+const syncClient = new WebSocketSyncClient(url, {
+  debug: true // Enable debug logging
+});
+
+// Monitor sync metrics
+syncClient.on('metrics', (metrics) => {
+  console.log('Sync metrics:', {
+    eventsPerSecond: metrics.eventsPerSecond,
+    latency: metrics.averageLatency,
+    bandwidth: metrics.bandwidthUsage
+  });
+});
+
+// Track sync status
+syncClient.on('status', (status) => {
+  console.log('Sync status:', status);
+  // 'connected', 'syncing', 'idle', 'error'
+});
+```
+
+## Custom Sync Client
+
+Create a custom sync client by implementing the interface:
+
+```typescript
+import { SyncClient, Event } from 'ksync';
+
+class CustomSyncClient implements SyncClient {
+  private eventHandlers = new Map();
+
+  async connect(): Promise<void> {
+    // Your connection logic
+  }
+
+  async disconnect(): Promise<void> {
+    // Your disconnection logic
+  }
+
+  async send(event: Event): Promise<void> {
+    // Your send logic
+  }
+
+  on(eventType: string, handler: Function): () => void {
+    if (!this.eventHandlers.has(eventType)) {
+      this.eventHandlers.set(eventType, []);
+    }
+    this.eventHandlers.get(eventType).push(handler);
+    
+    return () => this.off(eventType, handler);
+  }
+
+  off(eventType: string, handler: Function): void {
+    const handlers = this.eventHandlers.get(eventType);
+    if (handlers) {
+      const index = handlers.indexOf(handler);
+      if (index > -1) {
+        handlers.splice(index, 1);
+      }
+    }
+  }
+}
+``` 

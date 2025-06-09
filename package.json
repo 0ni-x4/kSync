@@ -1,6 +1,6 @@
 {
   "name": "@klastra/ksync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Schema-driven, Bun-native, real-time sync engine for local-first apps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -60,10 +60,14 @@
     "bun-types": "latest"
   },
   "peerDependencies": {
-    "drizzle-orm": "^0.29.0"
+    "drizzle-orm": "^0.29.0",
+    "react": ">=16.8.0"
   },
   "peerDependenciesMeta": {
     "drizzle-orm": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     }
   }

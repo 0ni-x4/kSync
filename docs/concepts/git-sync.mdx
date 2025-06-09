@@ -1,0 +1,660 @@
+---
+title: "Git-like Sync"
+description: "Pull/push synchronization model for reliable offline-first applications"
+---
+
+# Git-like Sync
+
+kSync's Git-like sync mode provides a reliable pull/push synchronization model similar to Git version control. This is perfect for offline-first applications that need deterministic, conflict-free synchronization without requiring persistent WebSocket connections.
+
+## What is Git-like Sync?
+
+Git-like sync provides:
+- **📡 Pull/Push Model** - Manual and scheduled synchronization like Git
+- **🔄 Offline-First** - Full functionality without internet connection
+- **🔀 Conflict Resolution** - Smart merging with CRDT and vector clocks
+- **📊 Sync History** - Track all synchronization operations
+- **🔒 Authentication** - Secure sync with token-based auth
+- **⚡ Compression** - Efficient data transfer with delta compression
+
+## Basic Setup
+
+```typescript
+import { ksync } from '@klastra/ksync';
+import { z } from 'zod';
+
+// Define your schemas
+const TaskSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  completed: z.boolean(),
+  createdAt: z.number(),
+  updatedAt: z.number()
+});
+
+// Create kSync instance with Git-like sync
+const taskSync = ksync.createGitSync({
+  serverUrl: 'https://api.example.com/sync',
+  auth: {
+    token: 'your-auth-token',
+    // or use a function for dynamic tokens
+    // getToken: async () => await refreshAuthToken()
+  },
+  compression: true,
+  retries: 3
+});
+
+// Define event schemas
+taskSync.defineSchema('task-created', TaskSchema);
+taskSync.defineSchema('task-updated', TaskSchema.partial().extend({ id: z.string() }));
+taskSync.defineSchema('task-deleted', z.object({ id: z.string() }));
+```
+
+## Core Operations
+
+### Pull (Download Changes)
+
+```typescript
+// Pull latest changes from server
+const pullResult = await taskSync.pull();
+console.log('Pull result:', pullResult);
+/*
+{
+  success: true,
+  newEvents: 15,
+  conflicts: 0,
+  lastSync: 1703123456789,
+  vectorClock: { 'node-1': 42, 'node-2': 38 }
+}
+*/
+
+// Pull with options
+const pullResult = await taskSync.pull({
+  since: Date.now() - 3600000, // Only pull events from last hour
+  maxEvents: 100,               // Limit number of events
+  compress: true                // Use compression
+});
+
+// Check if pull is needed
+const hasNewChanges = await taskSync.hasRemoteChanges();
+if (hasNewChanges) {
+  await taskSync.pull();
+}
+```
+
+### Push (Upload Changes)
+
+```typescript
+// Push local changes to server
+const pushResult = await taskSync.push();
+console.log('Push result:', pushResult);
+/*
+{
+  success: true,
+  sentEvents: 8,
+  conflicts: 1,
+  resolvedConflicts: 1,
+  serverVectorClock: { 'node-1': 43, 'node-2': 40, 'local': 25 }
+}
+*/
+
+// Push with options
+const pushResult = await taskSync.push({
+  compress: true,        // Compress data
+  dryRun: false,        // Actually perform the push
+  maxRetries: 3         // Retry failed pushes
+});
+
+// Check if push is needed
+const hasLocalChanges = await taskSync.hasLocalChanges();
+if (hasLocalChanges) {
+  await taskSync.push();
+}
+```
+
+### Sync (Pull + Push)
+
+```typescript
+// Combined pull and push operation
+const syncResult = await taskSync.sync();
+console.log('Sync result:', syncResult);
+/*
+{
+  pulled: {
+    success: true,
+    newEvents: 15,
+    conflicts: 0
+  },
+  pushed: {
+    success: true,
+    sentEvents: 8,
+    conflicts: 1
+  },
+  totalTime: 1250, // milliseconds
+  status: 'success'
+}
+*/
+
+// Sync with conflict resolution strategy
+const syncResult = await taskSync.sync({
+  conflictResolution: 'merge', // 'merge', 'local-wins', 'remote-wins'
+  timeout: 30000 // 30 second timeout
+});
+```
+
+## Conflict Resolution
+
+Git-like sync includes sophisticated conflict resolution:
+
+```typescript
+// Configure conflict resolution
+const taskSync = ksync.createGitSync({
+  serverUrl: 'https://api.example.com/sync',
+  conflictResolution: {
+    strategy: 'merge', // 'merge', 'local-wins', 'remote-wins', 'manual'
+    
+    // Custom conflict resolver
+    resolver: async (localEvent, remoteEvent, context) => {
+      // Custom logic for resolving conflicts
+      if (localEvent.type === 'task-updated' && remoteEvent.type === 'task-updated') {
+        // Merge the changes
+        return {
+          ...remoteEvent,
+          data: {
+            ...remoteEvent.data,
+            ...localEvent.data,
+            updatedAt: Math.max(localEvent.data.updatedAt, remoteEvent.data.updatedAt)
+          }
+        };
+      }
+      
+      // Default to remote wins
+      return remoteEvent;
+    }
+  }
+});
+
+// Listen to conflict events
+taskSync.on('conflict-detected', (conflict) => {
+  console.log('Conflict detected:', conflict);
+  /*
+  {
+    localEvent: { type: 'task-updated', data: { id: '123', title: 'Local Title' } },
+    remoteEvent: { type: 'task-updated', data: { id: '123', title: 'Remote Title' } },
+    resolved: true,
+    resolution: { type: 'task-updated', data: { id: '123', title: 'Remote Title' } }
+  }
+  */
+});
+
+taskSync.on('conflict-resolved', (resolution) => {
+  console.log('Conflict resolved:', resolution);
+});
+```
+
+## Scheduled Synchronization
+
+Set up automatic periodic sync:
+
+```typescript
+// Start periodic sync every 5 minutes
+taskSync.startPeriodicSync({
+  interval: 300000, // 5 minutes in milliseconds
+  pullOnly: false,  // Also push changes
+  retryOnFailure: true,
+  maxRetries: 3
+});
+
+// Or just periodic pulls
+taskSync.startPeriodicPull({
+  interval: 60000 // Pull every minute
+});
+
+// Listen to sync events
+taskSync.on('periodic-sync-success', (result) => {
+  console.log('Periodic sync completed:', result);
+});
+
+taskSync.on('periodic-sync-error', (error) => {
+  console.error('Periodic sync failed:', error);
+});
+
+// Stop periodic sync
+taskSync.stopPeriodicSync();
+```
+
+## Sync Status and History
+
+Track synchronization status and history:
+
+```typescript
+// Get current sync status
+const status = await taskSync.getSyncStatus();
+console.log('Sync status:', status);
+/*
+{
+  isOnline: true,
+  lastPull: 1703123456789,
+  lastPush: 1703123456789,
+  lastSync: 1703123456789,
+  pendingEvents: 3,
+  conflicts: 0,
+  vectorClock: { 'node-1': 42, 'local': 25 }
+}
+*/
+
+// Get sync history
+const history = await taskSync.getSyncHistory({ limit: 10 });
+console.log('Recent syncs:', history);
+/*
+[
+  {
+    timestamp: 1703123456789,
+    type: 'sync',
+    success: true,
+    events: { pulled: 5, pushed: 2 },
+    conflicts: 0,
+    duration: 1250
+  },
+  // ... more sync records
+]
+*/
+
+// Check connectivity
+const isConnected = await taskSync.checkConnectivity();
+console.log('Server reachable:', isConnected);
+```
+
+## Advanced Configuration
+
+### Authentication
+
+```typescript
+const taskSync = ksync.createGitSync({
+  serverUrl: 'https://api.example.com/sync',
+  auth: {
+    // Static token
+    token: 'your-auth-token',
+    
+    // Or dynamic token function
+    getToken: async () => {
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('refreshToken')}` }
+      });
+      const { accessToken } = await response.json();
+      return accessToken;
+    },
+    
+    // Or custom auth headers
+    getHeaders: async () => ({
+      'Authorization': `Bearer ${await getAuthToken()}`,
+      'X-API-Key': 'your-api-key'
+    })
+  }
+});
+```
+
+### Compression and Performance
+
+```typescript
+const taskSync = ksync.createGitSync({
+  serverUrl: 'https://api.example.com/sync',
+  
+  // Compression settings
+  compression: {
+    enabled: true,
+    algorithm: 'gzip', // 'gzip' or 'deflate'
+    level: 6 // Compression level 1-9
+  },
+  
+  // Batch settings
+  batch: {
+    maxEvents: 100,    // Max events per request
+    maxSize: '1MB',    // Max request size
+    timeout: 30000     // Request timeout
+  },
+  
+  // Retry settings
+  retries: {
+    max: 3,
+    delay: 1000,      // Initial delay
+    backoff: 2        // Exponential backoff multiplier
+  }
+});
+```
+
+### Delta Sync
+
+Only sync changed data for efficiency:
+
+```typescript
+const taskSync = ksync.createGitSync({
+  serverUrl: 'https://api.example.com/sync',
+  
+  // Enable delta sync
+  deltaSync: {
+    enabled: true,
+    chunkSize: 50,     // Events per chunk
+    maxChunks: 10      // Max chunks per sync
+  }
+});
+
+// Delta sync automatically calculates what's new since last sync
+const result = await taskSync.pull(); // Only downloads new/changed events
+```
+
+## Real-World Example: Todo App with Offline Sync
+
+```typescript
+import { ksync } from '@klastra/ksync';
+import { z } from 'zod';
+
+// Todo schema
+const TodoSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string().optional(),
+  completed: z.boolean(),
+  priority: z.enum(['low', 'medium', 'high']),
+  dueDate: z.number().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  userId: z.string()
+});
+
+// Todo app with offline sync
+class OfflineTodoApp {
+  private todoSync: GitSyncClient;
+  private isOnline: boolean = navigator.onLine;
+  
+  constructor(userId: string) {
+    // Initialize Git-like sync
+    this.todoSync = ksync.createGitSync({
+      serverUrl: 'https://api.todoapp.com/sync',
+      auth: {
+        getToken: () => this.getAuthToken()
+      },
+      compression: true,
+      conflictResolution: {
+        strategy: 'merge',
+        resolver: this.resolveTodoConflict.bind(this)
+      }
+    });
+    
+    // Define schemas
+    this.todoSync.defineSchema('todo-created', TodoSchema);
+    this.todoSync.defineSchema('todo-updated', TodoSchema.partial().extend({ id: z.string() }));
+    this.todoSync.defineSchema('todo-deleted', z.object({ id: z.string() }));
+    
+    // Setup event listeners
+    this.setupEventListeners();
+    
+    // Setup connectivity monitoring
+    this.setupConnectivityMonitoring();
+    
+    // Start periodic sync when online
+    if (this.isOnline) {
+      this.startPeriodicSync();
+    }
+  }
+  
+  private async getAuthToken(): Promise<string> {
+    // Get auth token from storage or refresh
+    const token = localStorage.getItem('authToken');
+    if (!token) throw new Error('No auth token available');
+    return token;
+  }
+  
+  private async resolveTodoConflict(localEvent: any, remoteEvent: any): Promise<any> {
+    // Custom conflict resolution for todos
+    if (localEvent.type === 'todo-updated' && remoteEvent.type === 'todo-updated') {
+      // Merge updates, preferring most recent
+      const localTime = localEvent.data.updatedAt || 0;
+      const remoteTime = remoteEvent.data.updatedAt || 0;
+      
+      if (localTime > remoteTime) {
+        return localEvent; // Local is newer
+      } else {
+        return remoteEvent; // Remote is newer
+      }
+    }
+    
+    // For different event types, prefer remote
+    return remoteEvent;
+  }
+  
+  private setupEventListeners() {
+    // Listen to sync events
+    this.todoSync.on('sync-success', (result) => {
+      console.log('Sync completed successfully:', result);
+      this.updateSyncStatus('synced', result);
+    });
+    
+    this.todoSync.on('sync-error', (error) => {
+      console.error('Sync failed:', error);
+      this.updateSyncStatus('error', error);
+    });
+    
+    this.todoSync.on('conflict-resolved', (conflict) => {
+      console.log('Todo conflict resolved:', conflict);
+      this.notifyUser('Some changes were merged automatically');
+    });
+    
+    // Listen to todo events for UI updates
+    this.todoSync.on('todo-created', (event) => {
+      this.addTodoToUI(event.data);
+    });
+    
+    this.todoSync.on('todo-updated', (event) => {
+      this.updateTodoInUI(event.data);
+    });
+    
+    this.todoSync.on('todo-deleted', (event) => {
+      this.removeTodoFromUI(event.data.id);
+    });
+  }
+  
+  private setupConnectivityMonitoring() {
+    window.addEventListener('online', async () => {
+      this.isOnline = true;
+      console.log('Connection restored - starting sync');
+      
+      try {
+        await this.sync();
+        this.startPeriodicSync();
+      } catch (error) {
+        console.error('Failed to sync after coming online:', error);
+      }
+    });
+    
+    window.addEventListener('offline', () => {
+      this.isOnline = false;
+      console.log('Connection lost - working offline');
+      this.stopPeriodicSync();
+      this.updateSyncStatus('offline');
+    });
+  }
+  
+  private startPeriodicSync() {
+    this.todoSync.startPeriodicSync({
+      interval: 60000, // Sync every minute
+      pullOnly: false
+    });
+  }
+  
+  private stopPeriodicSync() {
+    this.todoSync.stopPeriodicSync();
+  }
+  
+  // Public API methods
+  async createTodo(todo: Omit<typeof TodoSchema._type, 'id' | 'createdAt' | 'updatedAt'>) {
+    const newTodo = {
+      ...todo,
+      id: `todo-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    
+    await this.todoSync.send('todo-created', newTodo);
+    
+    // Try to push immediately if online
+    if (this.isOnline) {
+      try {
+        await this.todoSync.push();
+      } catch (error) {
+        console.log('Push failed, will retry later:', error);
+      }
+    }
+    
+    return newTodo;
+  }
+  
+  async updateTodo(id: string, updates: Partial<typeof TodoSchema._type>) {
+    const updatedTodo = {
+      ...updates,
+      id,
+      updatedAt: Date.now()
+    };
+    
+    await this.todoSync.send('todo-updated', updatedTodo);
+    
+    // Try to push immediately if online
+    if (this.isOnline) {
+      try {
+        await this.todoSync.push();
+      } catch (error) {
+        console.log('Push failed, will retry later:', error);
+      }
+    }
+  }
+  
+  async deleteTodo(id: string) {
+    await this.todoSync.send('todo-deleted', { id });
+    
+    // Try to push immediately if online
+    if (this.isOnline) {
+      try {
+        await this.todoSync.push();
+      } catch (error) {
+        console.log('Push failed, will retry later:', error);
+      }
+    }
+  }
+  
+  async sync(): Promise<void> {
+    if (!this.isOnline) {
+      throw new Error('Cannot sync while offline');
+    }
+    
+    this.updateSyncStatus('syncing');
+    
+    try {
+      const result = await this.todoSync.sync();
+      this.updateSyncStatus('synced', result);
+    } catch (error) {
+      this.updateSyncStatus('error', error);
+      throw error;
+    }
+  }
+  
+  async getSyncStatus() {
+    return await this.todoSync.getSyncStatus();
+  }
+  
+  async getPendingChanges() {
+    return await this.todoSync.hasLocalChanges();
+  }
+  
+  // UI update methods (implement based on your UI framework)
+  private addTodoToUI(todo: any) {
+    // Add todo to your UI
+    console.log('Adding todo to UI:', todo);
+  }
+  
+  private updateTodoInUI(todo: any) {
+    // Update todo in your UI
+    console.log('Updating todo in UI:', todo);
+  }
+  
+  private removeTodoFromUI(todoId: string) {
+    // Remove todo from your UI
+    console.log('Removing todo from UI:', todoId);
+  }
+  
+  private updateSyncStatus(status: string, data?: any) {
+    // Update sync status in your UI
+    console.log('Sync status:', status, data);
+  }
+  
+  private notifyUser(message: string) {
+    // Show notification to user
+    console.log('Notification:', message);
+  }
+}
+
+// Usage
+const todoApp = new OfflineTodoApp('user-123');
+
+// Create todos (works offline)
+await todoApp.createTodo({
+  title: 'Buy groceries',
+  description: 'Milk, bread, eggs',
+  completed: false,
+  priority: 'medium',
+  userId: 'user-123'
+});
+
+// Manual sync
+try {
+  await todoApp.sync();
+  console.log('Sync completed');
+} catch (error) {
+  console.log('Sync failed:', error.message);
+}
+
+// Check sync status
+const status = await todoApp.getSyncStatus();
+console.log('Sync status:', status);
+```
+
+## Server Integration
+
+Your server needs to support the Git-like sync protocol:
+
+```typescript
+// Example Express.js server endpoint
+app.post('/sync/pull', async (req, res) => {
+  const { vectorClock, since, maxEvents } = req.body;
+  
+  // Get events newer than client's vector clock
+  const events = await getEventsAfter(vectorClock, since, maxEvents);
+  const serverVectorClock = await getServerVectorClock();
+  
+  res.json({
+    events,
+    vectorClock: serverVectorClock,
+    hasMore: events.length === maxEvents
+  });
+});
+
+app.post('/sync/push', async (req, res) => {
+  const { events, vectorClock } = req.body;
+  
+  // Detect conflicts
+  const conflicts = await detectConflicts(events, vectorClock);
+  
+  // Store events
+  const storedEvents = await storeEvents(events, conflicts);
+  const newVectorClock = await updateVectorClock(vectorClock);
+  
+  res.json({
+    success: true,
+    conflicts,
+    vectorClock: newVectorClock,
+    storedEvents: storedEvents.length
+  });
+});
+```
+
+Git-like sync provides a robust, predictable synchronization model that works great for offline-first applications while maintaining data consistency across all devices. 

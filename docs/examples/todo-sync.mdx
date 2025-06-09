@@ -1,0 +1,791 @@
+---
+title: "Todo List with Git-like Sync"
+description: "Build an offline-first todo application with kSync - demonstrates Git-like sync, conflict resolution, and multi-device support"
+---
+
+# Todo List with Git-like Sync
+
+Learn how to build an offline-first todo application using kSync's Git-like synchronization, enabling seamless collaboration across devices even when offline.
+
+## Overview
+
+This example demonstrates:
+- Git-like pull/push synchronization
+- Offline-first architecture
+- Conflict resolution for concurrent edits
+- Multi-device support
+- CRDT integration for conflict-free updates
+- Local persistence with automatic sync
+
+## Todo Store Setup
+
+```typescript stores/todoStore.ts
+import { 
+  KSync, 
+  FileStorage, 
+  GitSyncClient,
+  createDrizzleAdapter 
+} from 'ksync';
+import { LWWRegister, GSet } from 'ksync/crdt';
+
+export interface Todo {
+  id: string;
+  title: string;
+  description?: string;
+  completed: boolean;
+  priority: 'low' | 'medium' | 'high';
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+  createdBy: string;
+  assignedTo?: string;
+  dueDate?: number;
+}
+
+export interface TodoState {
+  todos: Todo[];
+  tags: Set<string>;
+  users: Map<string, { id: string; name: string; email: string }>;
+  lastSyncTime: number;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export const createTodoStore = (userId: string, syncUrl?: string) => {
+  const ksync = new KSync<TodoState>({
+    storage: new FileStorage(`./todos-${userId}.json`, {
+      compression: true,
+      backup: true
+    }),
+    syncClient: syncUrl ? new GitSyncClient({
+      url: syncUrl,
+      auth: { type: 'token', token: process.env.SYNC_TOKEN || '' },
+      branch: 'main',
+      pullInterval: 30000, // Pull every 30 seconds
+      conflictResolution: 'manual'
+    }) : undefined,
+    mode: 'crdt' // Use CRDT mode for conflict-free merging
+  });
+
+  // Set up materializer
+  ksync.materialize((events) => {
+    const state: TodoState = {
+      todos: [],
+      tags: new Set(),
+      users: new Map(),
+      lastSyncTime: 0
+    };
+
+    for (const event of events) {
+      switch (event.type) {
+        case 'todo_created':
+          state.todos.push(event.data);
+          event.data.tags?.forEach((tag: string) => state.tags.add(tag));
+          state.lastSyncTime = Math.max(state.lastSyncTime, event.timestamp);
+          break;
+
+        case 'todo_updated':
+          const todoIndex = state.todos.findIndex(t => t.id === event.data.id);
+          if (todoIndex >= 0) {
+            state.todos[todoIndex] = { ...state.todos[todoIndex], ...event.data };
+            event.data.tags?.forEach((tag: string) => state.tags.add(tag));
+          }
+          state.lastSyncTime = Math.max(state.lastSyncTime, event.timestamp);
+          break;
+
+        case 'todo_deleted':
+          state.todos = state.todos.filter(t => t.id !== event.data.id);
+          state.lastSyncTime = Math.max(state.lastSyncTime, event.timestamp);
+          break;
+
+        case 'todo_completed':
+          const completedIndex = state.todos.findIndex(t => t.id === event.data.id);
+          if (completedIndex >= 0) {
+            state.todos[completedIndex].completed = event.data.completed;
+            state.todos[completedIndex].updatedAt = event.timestamp;
+          }
+          state.lastSyncTime = Math.max(state.lastSyncTime, event.timestamp);
+          break;
+
+        case 'user_registered':
+          state.users.set(event.data.id, event.data);
+          break;
+
+        case 'sync_completed':
+          state.lastSyncTime = event.timestamp;
+          break;
+      }
+    }
+
+    return state;
+  });
+
+  // Set up conflict resolution
+  if (ksync.syncClient) {
+    ksync.syncClient.on('conflict', (conflict) => {
+      console.log('Conflict detected:', conflict);
+      return resolveConflict(conflict);
+    });
+  }
+
+  return ksync;
+};
+
+// Conflict resolution logic
+function resolveConflict(conflict: any) {
+  if (conflict.type === 'concurrent-edit') {
+    const ours = conflict.ours.data;
+    const theirs = conflict.theirs.data;
+    
+    // For todos, use last-write-wins based on updatedAt
+    if (ours.updatedAt > theirs.updatedAt) {
+      return conflict.ours;
+    } else if (theirs.updatedAt > ours.updatedAt) {
+      return conflict.theirs;
+    } else {
+      // If timestamps are equal, merge the changes
+      return {
+        ...conflict.ours,
+        data: mergeTodos(ours, theirs)
+      };
+    }
+  }
+  
+  // Default to theirs (server wins)
+  return conflict.theirs;
+}
+
+function mergeTodos(local: Todo, remote: Todo): Todo {
+  // Merge todo properties intelligently
+  return {
+    ...local,
+    ...remote,
+    // Merge tags (union of both sets)
+    tags: [...new Set([...local.tags, ...remote.tags])],
+    // Use the later update time
+    updatedAt: Math.max(local.updatedAt, remote.updatedAt),
+    // If one is completed and the other isn't, prefer completed
+    completed: local.completed || remote.completed
+  };
+}
+```
+
+## Todo Service Layer
+
+```typescript services/todoService.ts
+import { KSync } from 'ksync';
+import { Todo, TodoState, User } from '../stores/todoStore';
+
+export class TodoService {
+  constructor(private ksync: KSync<TodoState>) {}
+
+  // Create a new todo
+  async createTodo(
+    title: string, 
+    options: Partial<Omit<Todo, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>> = {}
+  ): Promise<Todo> {
+    const todo: Todo = {
+      id: generateId(),
+      title,
+      description: options.description || '',
+      completed: false,
+      priority: options.priority || 'medium',
+      tags: options.tags || [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      createdBy: this.getCurrentUserId(),
+      assignedTo: options.assignedTo,
+      dueDate: options.dueDate
+    };
+
+    await this.ksync.emit('todo_created', todo);
+    return todo;
+  }
+
+  // Update an existing todo
+  async updateTodo(id: string, updates: Partial<Todo>): Promise<void> {
+    const existingTodo = this.getTodoById(id);
+    if (!existingTodo) {
+      throw new Error(`Todo with id ${id} not found`);
+    }
+
+    const updatedTodo = {
+      ...updates,
+      id,
+      updatedAt: Date.now()
+    };
+
+    await this.ksync.emit('todo_updated', updatedTodo);
+  }
+
+  // Toggle todo completion
+  async toggleTodoCompletion(id: string): Promise<void> {
+    const todo = this.getTodoById(id);
+    if (!todo) {
+      throw new Error(`Todo with id ${id} not found`);
+    }
+
+    await this.ksync.emit('todo_completed', {
+      id,
+      completed: !todo.completed
+    });
+  }
+
+  // Delete a todo
+  async deleteTodo(id: string): Promise<void> {
+    const todo = this.getTodoById(id);
+    if (!todo) {
+      throw new Error(`Todo with id ${id} not found`);
+    }
+
+    await this.ksync.emit('todo_deleted', { id });
+  }
+
+  // Bulk operations
+  async bulkComplete(ids: string[]): Promise<void> {
+    for (const id of ids) {
+      await this.ksync.emit('todo_completed', { id, completed: true });
+    }
+  }
+
+  async bulkDelete(ids: string[]): Promise<void> {
+    for (const id of ids) {
+      await this.ksync.emit('todo_deleted', { id });
+    }
+  }
+
+  // Sync operations
+  async sync(): Promise<{ pulled: number; pushed: number; conflicts: number }> {
+    if (!this.ksync.syncClient) {
+      return { pulled: 0, pushed: 0, conflicts: 0 };
+    }
+
+    try {
+      const result = await this.ksync.sync();
+      
+      await this.ksync.emit('sync_completed', {
+        pulled: result.pulled.newEvents.length,
+        pushed: result.pushed.pushedEvents.length,
+        conflicts: result.conflicts.length,
+        timestamp: Date.now()
+      });
+
+      return {
+        pulled: result.pulled.newEvents.length,
+        pushed: result.pushed.pushedEvents.length,
+        conflicts: result.conflicts.length
+      };
+    } catch (error) {
+      console.error('Sync failed:', error);
+      throw error;
+    }
+  }
+
+  async push(): Promise<number> {
+    if (!this.ksync.syncClient) return 0;
+    
+    const result = await this.ksync.push();
+    return result.pushedEvents.length;
+  }
+
+  async pull(): Promise<{ newEvents: number; conflicts: number }> {
+    if (!this.ksync.syncClient) return { newEvents: 0, conflicts: 0 };
+    
+    const result = await this.ksync.pull();
+    return {
+      newEvents: result.newEvents.length,
+      conflicts: result.conflicts.length
+    };
+  }
+
+  // Query methods
+  getTodoById(id: string): Todo | undefined {
+    return this.ksync.state.todos.find(t => t.id === id);
+  }
+
+  getAllTodos(): Todo[] {
+    return this.ksync.state.todos;
+  }
+
+  getActiveTodos(): Todo[] {
+    return this.ksync.state.todos.filter(t => !t.completed);
+  }
+
+  getCompletedTodos(): Todo[] {
+    return this.ksync.state.todos.filter(t => t.completed);
+  }
+
+  getTodosByTag(tag: string): Todo[] {
+    return this.ksync.state.todos.filter(t => t.tags.includes(tag));
+  }
+
+  getTodosByPriority(priority: Todo['priority']): Todo[] {
+    return this.ksync.state.todos.filter(t => t.priority === priority);
+  }
+
+  getTodosByAssignee(userId: string): Todo[] {
+    return this.ksync.state.todos.filter(t => t.assignedTo === userId);
+  }
+
+  searchTodos(query: string): Todo[] {
+    const lowercaseQuery = query.toLowerCase();
+    return this.ksync.state.todos.filter(t => 
+      t.title.toLowerCase().includes(lowercaseQuery) ||
+      t.description?.toLowerCase().includes(lowercaseQuery) ||
+      t.tags.some(tag => tag.toLowerCase().includes(lowercaseQuery))
+    );
+  }
+
+  // Statistics
+  getStats() {
+    const todos = this.ksync.state.todos;
+    return {
+      total: todos.length,
+      completed: todos.filter(t => t.completed).length,
+      active: todos.filter(t => !t.completed).length,
+      byPriority: {
+        high: todos.filter(t => t.priority === 'high').length,
+        medium: todos.filter(t => t.priority === 'medium').length,
+        low: todos.filter(t => t.priority === 'low').length
+      },
+      overdue: todos.filter(t => 
+        t.dueDate && t.dueDate < Date.now() && !t.completed
+      ).length
+    };
+  }
+
+  private getCurrentUserId(): string {
+    // In a real app, this would come from authentication
+    return 'current-user-id';
+  }
+}
+
+function generateId(): string {
+  return `todo_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
+```
+
+## React Components
+
+```tsx components/TodoApp.tsx
+import React, { useState, useEffect } from 'react';
+import { useKSync, useKSyncEvent } from 'ksync/react';
+import { createTodoStore } from '../stores/todoStore';
+import { TodoService } from '../services/todoService';
+import { TodoList } from './TodoList';
+import { TodoForm } from './TodoForm';
+import { SyncStatus } from './SyncStatus';
+import { TodoFilters } from './TodoFilters';
+
+interface TodoAppProps {
+  userId: string;
+  syncUrl?: string;
+}
+
+export const TodoApp: React.FC<TodoAppProps> = ({ userId, syncUrl }) => {
+  const [todoStore] = useState(() => createTodoStore(userId, syncUrl));
+  const [todoService] = useState(() => new TodoService(todoStore));
+  const { ksync, isConnected } = useKSync(todoStore);
+  
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  // Load persisted todos on startup
+  useEffect(() => {
+    ksync.load().then(() => {
+      console.log('Loaded todos from storage');
+    });
+  }, [ksync]);
+
+  // Auto-sync every 30 seconds when online
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const interval = setInterval(async () => {
+      try {
+        await todoService.sync();
+      } catch (error) {
+        console.error('Auto-sync failed:', error);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [isConnected, todoService]);
+
+  // Listen for sync events
+  useKSyncEvent(ksync, 'sync_completed', (event) => {
+    console.log('Sync completed:', event.data);
+  });
+
+  // Get filtered todos
+  const getFilteredTodos = () => {
+    let todos = todoService.getAllTodos();
+
+    // Apply text search
+    if (searchQuery) {
+      todos = todoService.searchTodos(searchQuery);
+    }
+
+    // Apply tag filter
+    if (selectedTag) {
+      todos = todoService.getTodosByTag(selectedTag);
+    }
+
+    // Apply completion filter
+    switch (filter) {
+      case 'active':
+        return todos.filter(t => !t.completed);
+      case 'completed':
+        return todos.filter(t => t.completed);
+      default:
+        return todos;
+    }
+  };
+
+  const stats = todoService.getStats();
+
+  return (
+    <div className="todo-app">
+      <header className="todo-header">
+        <h1>Todo List</h1>
+        <SyncStatus 
+          ksync={ksync}
+          todoService={todoService}
+          isConnected={isConnected}
+          stats={stats}
+        />
+      </header>
+
+      <div className="todo-controls">
+        <TodoForm todoService={todoService} />
+        
+        <TodoFilters
+          filter={filter}
+          onFilterChange={setFilter}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          selectedTag={selectedTag}
+          onTagChange={setSelectedTag}
+          availableTags={Array.from(ksync.state.tags)}
+          stats={stats}
+        />
+      </div>
+
+      <main className="todo-main">
+        <TodoList 
+          todos={getFilteredTodos()}
+          todoService={todoService}
+        />
+      </main>
+    </div>
+  );
+};
+```
+
+```tsx components/TodoList.tsx
+import React from 'react';
+import { Todo } from '../stores/todoStore';
+import { TodoService } from '../services/todoService';
+import { TodoItem } from './TodoItem';
+
+interface TodoListProps {
+  todos: Todo[];
+  todoService: TodoService;
+}
+
+export const TodoList: React.FC<TodoListProps> = ({ todos, todoService }) => {
+  const handleBulkComplete = async () => {
+    const activeTodoIds = todos
+      .filter(t => !t.completed)
+      .map(t => t.id);
+    
+    if (activeTodoIds.length > 0) {
+      await todoService.bulkComplete(activeTodoIds);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const completedTodoIds = todos
+      .filter(t => t.completed)
+      .map(t => t.id);
+    
+    if (completedTodoIds.length > 0) {
+      await todoService.bulkDelete(completedTodoIds);
+    }
+  };
+
+  if (todos.length === 0) {
+    return (
+      <div className="empty-state">
+        <p>No todos found</p>
+      </div>
+    );
+  }
+
+  const activeTodos = todos.filter(t => !t.completed);
+  const completedTodos = todos.filter(t => t.completed);
+
+  return (
+    <div className="todo-list">
+      {activeTodos.length > 0 && (
+        <section className="todo-section">
+          <div className="section-header">
+            <h3>Active ({activeTodos.length})</h3>
+            <button 
+              onClick={handleBulkComplete}
+              className="bulk-action-btn"
+              title="Complete all active todos"
+            >
+              ✓ Complete All
+            </button>
+          </div>
+          {activeTodos.map(todo => (
+            <TodoItem 
+              key={todo.id} 
+              todo={todo} 
+              todoService={todoService} 
+            />
+          ))}
+        </section>
+      )}
+
+      {completedTodos.length > 0 && (
+        <section className="todo-section">
+          <div className="section-header">
+            <h3>Completed ({completedTodos.length})</h3>
+            <button 
+              onClick={handleBulkDelete}
+              className="bulk-action-btn danger"
+              title="Delete all completed todos"
+            >
+              🗑️ Clear Completed
+            </button>
+          </div>
+          {completedTodos.map(todo => (
+            <TodoItem 
+              key={todo.id} 
+              todo={todo} 
+              todoService={todoService} 
+            />
+          ))}
+        </section>
+      )}
+    </div>
+  );
+};
+```
+
+```tsx components/SyncStatus.tsx
+import React, { useState } from 'react';
+import { KSync } from 'ksync';
+import { TodoService } from '../services/todoService';
+
+interface SyncStatusProps {
+  ksync: KSync;
+  todoService: TodoService;
+  isConnected: boolean;
+  stats: any;
+}
+
+export const SyncStatus: React.FC<SyncStatusProps> = ({
+  ksync,
+  todoService,
+  isConnected,
+  stats
+}) => {
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await todoService.sync();
+      setLastSync(new Date());
+      console.log('Manual sync completed:', result);
+    } catch (error) {
+      console.error('Manual sync failed:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const formatLastSync = () => {
+    if (!lastSync) return 'Never';
+    const now = new Date();
+    const diff = now.getTime() - lastSync.getTime();
+    
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return lastSync.toLocaleDateString();
+  };
+
+  return (
+    <div className="sync-status">
+      <div className="status-info">
+        <div className="connection-status">
+          <span className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
+          {isConnected ? 'Online' : 'Offline'}
+        </div>
+        
+        <div className="last-sync">
+          Last sync: {formatLastSync()}
+        </div>
+        
+        <div className="stats">
+          {stats.total} todos • {stats.active} active • {stats.completed} done
+        </div>
+      </div>
+
+      <div className="sync-controls">
+        <button
+          onClick={handleManualSync}
+          disabled={!isConnected || isSyncing}
+          className="sync-btn"
+          title="Sync now"
+        >
+          {isSyncing ? '🔄' : '↻'} Sync
+        </button>
+      </div>
+    </div>
+  );
+};
+```
+
+## Offline Support
+
+```typescript utils/offlineManager.ts
+export class OfflineManager {
+  private isOnline = navigator.onLine;
+  private listeners: Array<(online: boolean) => void> = [];
+
+  constructor() {
+    window.addEventListener('online', () => {
+      this.isOnline = true;
+      this.notifyListeners();
+    });
+
+    window.addEventListener('offline', () => {
+      this.isOnline = false;
+      this.notifyListeners();
+    });
+  }
+
+  getStatus(): boolean {
+    return this.isOnline;
+  }
+
+  onStatusChange(callback: (online: boolean) => void): () => void {
+    this.listeners.push(callback);
+    
+    return () => {
+      const index = this.listeners.indexOf(callback);
+      if (index > -1) {
+        this.listeners.splice(index, 1);
+      }
+    };
+  }
+
+  private notifyListeners() {
+    this.listeners.forEach(listener => listener(this.isOnline));
+  }
+}
+
+// React hook for offline status
+export function useOfflineStatus() {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const manager = new OfflineManager();
+    
+    const unsubscribe = manager.onStatusChange(setIsOnline);
+    
+    return unsubscribe;
+  }, []);
+
+  return isOnline;
+}
+```
+
+## Features Demonstrated
+
+This todo application showcases:
+
+1. **Git-like Sync**: Pull/push model similar to Git version control
+2. **Offline-First**: Works completely offline with local storage
+3. **Conflict Resolution**: Handles concurrent edits from multiple devices
+4. **Real-time Updates**: Changes sync automatically when online
+5. **Bulk Operations**: Efficient handling of multiple todos
+6. **Search & Filtering**: Query todos by various criteria
+7. **Statistics**: Track completion rates and productivity
+8. **Persistence**: Local file storage with automatic backup
+
+## Running the Example
+
+1. **Install dependencies**:
+```bash
+npm install ksync
+```
+
+2. **Run locally**:
+```bash
+npm run dev
+```
+
+3. **Set up sync server** (optional):
+```bash
+# Use any Git-compatible server
+# GitHub, GitLab, or custom Git server
+export SYNC_TOKEN="your-git-token"
+export SYNC_URL="https://github.com/user/todos.git"
+```
+
+4. **Test offline behavior**:
+   - Disconnect network
+   - Create/edit todos
+   - Reconnect network
+   - Watch automatic sync
+
+## Advanced Features
+
+### Custom Conflict Resolution
+
+```typescript
+// Advanced conflict resolution strategies
+function createSmartConflictResolver() {
+  return (conflict: any) => {
+    const { ours, theirs } = conflict;
+    
+    // Priority-based resolution
+    if (ours.data.priority === 'high' && theirs.data.priority !== 'high') {
+      return ours;
+    }
+    
+    // Completion wins over other changes
+    if (ours.data.completed !== theirs.data.completed) {
+      return ours.data.completed ? ours : theirs;
+    }
+    
+    // Merge non-conflicting fields
+    return mergeToDoUpdates(ours, theirs);
+  };
+}
+```
+
+### Collaborative Features
+
+```typescript
+// Add real-time collaboration
+todoService.on('todo_updated', (event) => {
+  if (event.actor !== currentUserId) {
+    showNotification(`${event.actor} updated "${event.data.title}"`);
+  }
+});
+```
+
+This example demonstrates how kSync enables robust offline-first applications with seamless synchronization and conflict resolution. 

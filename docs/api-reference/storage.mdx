@@ -1,0 +1,453 @@
+---
+title: "Storage Adapters"
+description: "API reference for kSync storage adapters - persist events to various storage backends"
+---
+
+# Storage Adapters
+
+kSync provides multiple storage adapters to persist events to different backends. All storage adapters implement the `StorageAdapter` interface.
+
+## Storage Interface
+
+```typescript
+interface StorageAdapter {
+  save(event: Event): Promise<void>;
+  load(): Promise<Event[]>;
+  clear(): Promise<void>;
+  getMetadata(): Promise<StorageMetadata>;
+}
+
+interface StorageMetadata {
+  version: number;
+  eventCount: number;
+  lastModified: Date;
+  size?: number;
+}
+```
+
+## InMemoryStorage
+
+A simple in-memory storage adapter for development and testing.
+
+### Constructor
+
+```typescript
+import { InMemoryStorage } from 'ksync';
+
+const storage = new InMemoryStorage(options?);
+```
+
+**Options:**
+- `maxEvents?` (number): Maximum number of events to keep in memory (default: unlimited)
+- `ttl?` (number): Time-to-live for events in milliseconds (default: unlimited)
+
+### Methods
+
+#### `save(event)`
+
+Saves an event to memory.
+
+```typescript
+await storage.save({
+  id: '123',
+  type: 'user_created',
+  data: { name: 'John' },
+  timestamp: Date.now(),
+  version: 1
+});
+```
+
+#### `load()`
+
+Loads all events from memory.
+
+```typescript
+const events = await storage.load();
+console.log(`Loaded ${events.length} events`);
+```
+
+#### `clear()`
+
+Clears all events from memory.
+
+```typescript
+await storage.clear();
+```
+
+#### `getMetadata()`
+
+Gets storage metadata.
+
+```typescript
+const metadata = await storage.getMetadata();
+console.log(`Version: ${metadata.version}, Events: ${metadata.eventCount}`);
+```
+
+### Example
+
+```typescript
+import { KSync, InMemoryStorage } from 'ksync';
+
+const ksync = new KSync({
+  storage: new InMemoryStorage({
+    maxEvents: 1000,
+    ttl: 24 * 60 * 60 * 1000 // 24 hours
+  })
+});
+```
+
+## FileStorage
+
+Persists events to a local file system.
+
+### Constructor
+
+```typescript
+import { FileStorage } from 'ksync';
+
+const storage = new FileStorage(filePath, options?);
+```
+
+**Parameters:**
+- `filePath` (string): Path to the storage file
+- `options` (optional):
+  - `compression?` (boolean): Enable gzip compression (default: false)
+  - `backup?` (boolean): Create backup files (default: true)
+  - `syncWrites?` (boolean): Synchronous writes for durability (default: false)
+
+### Methods
+
+Same as `StorageAdapter` interface.
+
+### Example
+
+```typescript
+import { KSync, FileStorage } from 'ksync';
+
+const ksync = new KSync({
+  storage: new FileStorage('./events.json', {
+    compression: true,
+    backup: true,
+    syncWrites: true
+  })
+});
+```
+
+## IndexedDBStorage
+
+Browser-based storage using IndexedDB.
+
+### Constructor
+
+```typescript
+import { IndexedDBStorage } from 'ksync';
+
+const storage = new IndexedDBStorage(dbName, options?);
+```
+
+**Parameters:**
+- `dbName` (string): Name of the IndexedDB database
+- `options` (optional):
+  - `version?` (number): Database version (default: 1)
+  - `storeName?` (string): Object store name (default: 'events')
+
+### Methods
+
+Same as `StorageAdapter` interface.
+
+### Example
+
+```typescript
+import { KSync, IndexedDBStorage } from 'ksync';
+
+const ksync = new KSync({
+  storage: new IndexedDBStorage('my-app-events', {
+    version: 1,
+    storeName: 'events'
+  })
+});
+```
+
+## SQLiteStorage
+
+Server-side SQLite storage for Node.js applications.
+
+### Constructor
+
+```typescript
+import { SQLiteStorage } from 'ksync';
+
+const storage = new SQLiteStorage(dbPath, options?);
+```
+
+**Parameters:**
+- `dbPath` (string): Path to SQLite database file
+- `options` (optional):
+  - `tableName?` (string): Table name for events (default: 'events')
+  - `wal?` (boolean): Enable WAL mode (default: true)
+  - `cache?` (number): Cache size in pages (default: 2000)
+
+### Methods
+
+Same as `StorageAdapter` interface, plus:
+
+#### `vacuum()`
+
+Optimizes the database by reclaiming space.
+
+```typescript
+await storage.vacuum();
+```
+
+#### `analyze()`
+
+Updates database statistics for query optimization.
+
+```typescript
+await storage.analyze();
+```
+
+### Example
+
+```typescript
+import { KSync, SQLiteStorage } from 'ksync';
+
+const ksync = new KSync({
+  storage: new SQLiteStorage('./events.db', {
+    tableName: 'app_events',
+    wal: true,
+    cache: 4000
+  })
+});
+```
+
+## RedisStorage
+
+Redis-based storage for distributed applications.
+
+### Constructor
+
+```typescript
+import { RedisStorage } from 'ksync';
+
+const storage = new RedisStorage(options);
+```
+
+**Options:**
+- `host` (string): Redis host
+- `port` (number): Redis port
+- `password?` (string): Redis password
+- `db?` (number): Redis database number
+- `keyPrefix?` (string): Prefix for Redis keys (default: 'ksync:')
+- `compression?` (boolean): Enable compression (default: false)
+
+### Methods
+
+Same as `StorageAdapter` interface, plus:
+
+#### `getStats()`
+
+Gets Redis storage statistics.
+
+```typescript
+const stats = await storage.getStats();
+console.log(`Memory usage: ${stats.memoryUsage} bytes`);
+```
+
+### Example
+
+```typescript
+import { KSync, RedisStorage } from 'ksync';
+
+const ksync = new KSync({
+  storage: new RedisStorage({
+    host: 'localhost',
+    port: 6379,
+    password: 'secret',
+    keyPrefix: 'myapp:',
+    compression: true
+  })
+});
+```
+
+## CloudStorage
+
+Cloud storage adapter for AWS S3, Google Cloud Storage, etc.
+
+### Constructor
+
+```typescript
+import { CloudStorage } from 'ksync';
+
+const storage = new CloudStorage(provider, options);
+```
+
+**Parameters:**
+- `provider` ('s3' | 'gcs' | 'azure'): Cloud provider
+- `options`: Provider-specific configuration
+
+### S3 Options
+
+```typescript
+{
+  bucket: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  prefix?: string;
+}
+```
+
+### Example
+
+```typescript
+import { KSync, CloudStorage } from 'ksync';
+
+const ksync = new KSync({
+  storage: new CloudStorage('s3', {
+    bucket: 'my-events-bucket',
+    region: 'us-east-1',
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    prefix: 'events/'
+  })
+});
+```
+
+## Custom Storage Adapter
+
+You can create custom storage adapters by implementing the `StorageAdapter` interface:
+
+```typescript
+import { StorageAdapter, Event, StorageMetadata } from 'ksync';
+
+class CustomStorage implements StorageAdapter {
+  private events: Event[] = [];
+
+  async save(event: Event): Promise<void> {
+    this.events.push(event);
+    // Your custom save logic here
+  }
+
+  async load(): Promise<Event[]> {
+    // Your custom load logic here
+    return this.events;
+  }
+
+  async clear(): Promise<void> {
+    this.events = [];
+    // Your custom clear logic here
+  }
+
+  async getMetadata(): Promise<StorageMetadata> {
+    return {
+      version: this.events.length > 0 ? 
+        Math.max(...this.events.map(e => e.version)) : 0,
+      eventCount: this.events.length,
+      lastModified: new Date()
+    };
+  }
+}
+
+// Use your custom storage
+const ksync = new KSync({
+  storage: new CustomStorage()
+});
+```
+
+## Storage Migration
+
+kSync provides utilities for migrating between storage adapters:
+
+```typescript
+import { migrateStorage } from 'ksync';
+
+// Migrate from file to SQLite
+await migrateStorage(
+  new FileStorage('./old-events.json'),
+  new SQLiteStorage('./new-events.db')
+);
+```
+
+## Storage Encryption
+
+For sensitive data, you can add encryption:
+
+```typescript
+import { EncryptedStorage } from 'ksync';
+
+const storage = new EncryptedStorage(
+  new FileStorage('./events.json'), // Underlying storage
+  {
+    algorithm: 'aes-256-gcm',
+    key: process.env.ENCRYPTION_KEY
+  }
+);
+```
+
+## Performance Considerations
+
+### Batch Operations
+
+For high-throughput applications, use batch operations:
+
+```typescript
+const storage = new SQLiteStorage('./events.db');
+
+// Enable batching
+storage.enableBatching({
+  maxBatchSize: 100,
+  maxWaitTime: 1000 // ms
+});
+```
+
+### Compression
+
+Enable compression for large events:
+
+```typescript
+const storage = new FileStorage('./events.json', {
+  compression: true // Reduces file size by ~70%
+});
+```
+
+### Connection Pooling
+
+For database storage, use connection pooling:
+
+```typescript
+const storage = new SQLiteStorage('./events.db', {
+  pool: {
+    min: 2,
+    max: 10,
+    acquireTimeoutMillis: 30000
+  }
+});
+```
+
+## Storage Monitoring
+
+Monitor storage performance and health:
+
+```typescript
+const storage = new SQLiteStorage('./events.db');
+
+// Monitor storage events
+storage.on('save', (event) => {
+  console.log(`Saved event ${event.id}`);
+});
+
+storage.on('error', (error) => {
+  console.error('Storage error:', error);
+});
+
+storage.on('slow-query', (query, duration) => {
+  console.warn(`Slow query: ${query} (${duration}ms)`);
+});
+
+// Get performance metrics
+const metrics = await storage.getMetrics();
+console.log('Average save time:', metrics.avgSaveTime);
+console.log('Total events:', metrics.totalEvents);
+console.log('Storage size:', metrics.sizeBytes);
+``` 

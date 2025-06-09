@@ -9,11 +9,18 @@ Built for blazing-fast web and AI apps that need full control over event storage
 - 🔒 **Typesafe TypeScript** with Zod schema validation
 - ⚡ Built on **Bun** for top performance
 - 🧱 Append-only **JSON event log** with strict schema validation
-- 🌐 Real-time **WebSocket sync** (no BroadcastChannel)
+- 🌐 **Dual sync modes**: WebSocket real-time OR git-like pull/push
 - 🧠 Smart **leader election** for tab sync (Web Locks / IndexedDB)
 - 🔁 **Materializer** to turn events into local state
 - 💾 **Local-first** with IndexedDB persistence
 - 🧪 Optimistic updates, conflict resolution, and more
+
+### 🚀 **New Advanced Features**
+- 🔀 **CRDT Integration** - True conflict-free sync with LWWRegister, GSet, GCounter
+- 🗄️ **Drizzle ORM Plugin** - Query events like a normal database with SQL-like syntax
+- 🏪 **Multistore Support** - Multiple isolated stores per app with cross-store operations
+- 📡 **Git-like Sync** - Pull/push model without persistent WebSocket connections
+- ⚛️ **React Hooks** - Full React integration with reactive components
 
 ---
 
@@ -23,13 +30,17 @@ Built for blazing-fast web and AI apps that need full control over event storage
 
 ```bash
 bun add @klastra/ksync zod
+# For React support
+bun add react
 ```
 
-### Basic Usage
+### 1. Basic Usage
 
 ```ts
 import { z } from 'zod';
-import { ksync } from '@klastra/ksync';
+import { createKSync } from '@klastra/ksync';
+
+const ksync = createKSync();
 
 // Define schema for your events
 ksync.defineSchema("message", z.object({
@@ -53,35 +64,101 @@ await ksync.send("message", {
 });
 ```
 
-### With Real-time Sync
+### 2. Multistore with Drizzle ORM
 
 ```ts
-import { createKSync } from '@klastra/ksync';
+import { createMultistore } from '@klastra/ksync';
 
-const client = createKSync({
-  serverUrl: 'ws://localhost:8080',
-  debug: true
+const multistore = createMultistore({
+  stores: {
+    'users': { serverUrl: 'ws://localhost:8080' },
+    'messages': { serverUrl: 'ws://localhost:8081' }
+  }
 });
 
-await client.initialize();
+await multistore.initialize();
+
+// Use like a database
+const db = multistore.getDrizzle('users');
+const users = db.table('user');
+
+// Send events that become database records
+await multistore.getStore('users').send('user:created', {
+  id: 'user-1',
+  name: 'Alice',
+  email: 'alice@example.com'
+});
+
+// Query like SQL
+const allUsers = await users.findMany({
+  where: { name: 'Alice' },
+  orderBy: { name: 'asc' },
+  limit: 10
+});
 ```
 
-### State Materialization
+### 3. Git-like Sync (No WebSockets)
 
 ```ts
-// Define how events become state
-ksync.defineMaterializer('chat', (events) => {
-  const messages = events
-    .filter(e => e.type === 'message')
-    .map(e => e.data)
-    .sort((a, b) => a.createdAt - b.createdAt);
-  
-  return { messages };
-});
+import { createGitSync } from '@klastra/ksync';
 
-// Get materialized state
-const chatState = ksync.getState('chat');
-console.log(chatState.messages);
+const gitSync = createGitSync({
+  remoteUrl: 'https://api.yourapp.com/sync',
+  pullInterval: 30000, // Pull every 30s
+  authToken: 'your-token'
+}, 'client-id');
+
+await gitSync.connect();
+
+// Manual operations
+await gitSync.pull();   // Fetch remote changes
+await gitSync.push();   // Send local changes  
+await gitSync.sync();   // Pull then push
+```
+
+### 4. CRDT Conflict-Free Sync
+
+```ts
+import { LWWRegister, GSet } from '@klastra/ksync';
+
+// Last Write Wins for simple values
+const title = new LWWRegister('My Document', Date.now(), 'client-1');
+
+// Grow-only Sets for collections
+const tags = new GSet(new Set(['react', 'typescript']));
+
+await ksync.send('doc-updated', {
+  id: 'doc-1',
+  title: title.toJSON(),
+  tags: tags.toJSON()
+});
+```
+
+### 5. React Hooks
+
+```tsx
+import { useKSync, useKSyncEvent, useKSyncLiveQuery } from '@klastra/ksync/react';
+
+function ChatApp() {
+  const { ksync, isConnected } = useKSync(myKSyncInstance);
+  const messages = useKSyncEvent(ksync, 'message');
+  
+  // Live database queries that auto-update
+  const { data: users } = useKSyncLiveQuery(
+    ksync,
+    drizzleAdapter,
+    'users',
+    async (table) => table.findMany({ limit: 50 })
+  );
+
+  return (
+    <div>
+      <div>Status: {isConnected ? 'Connected' : 'Offline'}</div>
+      <div>Users: {users.length}</div>
+      <div>Messages: {messages.length}</div>
+    </div>
+  );
+}
 ```
 
 ---

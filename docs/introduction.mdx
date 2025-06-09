@@ -5,83 +5,105 @@ description: 'Welcome to kSync - Schema-driven, Bun-native, real-time sync engin
 
 <img
   className="block dark:hidden"
-  src="/images/hero-light.png"
+  src="/logo/light.png"
   alt="Hero Light"
 />
 <img
   className="hidden dark:block"
-  src="/images/hero-dark.png"
+  src="/logo/dark.png"
   alt="Hero Dark"
 />
 
 ## What is kSync?
 
-kSync is a **schema-driven, Bun-native, real-time synchronization engine** designed for modern web and AI applications that need full control over event storage, tab synchronization, and backend integration — without the bloat.
+kSync is a **next-generation, schema-driven sync engine** that brings database-like functionality to real-time applications. Designed for modern web and AI apps that need full control over data synchronization, collaboration, and offline functionality — without the complexity.
 
 <CardGroup cols={2}>
   <Card
-    title="Local-First Architecture"
+    title="🗄️ Database-Like Queries"
     icon="database"
-    href="/concepts/architecture"
+    href="/concepts/drizzle-integration"
   >
-    Events are stored locally first, then synced in real-time across all clients
+    Query your real-time data with familiar SQL-like syntax using our Drizzle ORM integration
   </Card>
   <Card
-    title="Type-Safe with Zod"
+    title="🔀 Conflict-Free Sync"
+    icon="refresh"
+    href="/concepts/crdt"
+  >
+    Built-in CRDT support for true conflict-free collaborative editing
+  </Card>
+  <Card
+    title="🏪 Multi-Store Architecture"
+    icon="layers"
+    href="/concepts/multistore"
+  >
+    Manage multiple isolated data stores with cross-store operations
+  </Card>
+  <Card
+    title="📡 Git-Like Sync"
+    icon="git-merge"
+    href="/concepts/git-sync"
+  >
+    Pull/push synchronization model that works great for offline-first apps
+  </Card>
+  <Card
+    title="⚛️ React Integration"
+    icon="react"
+    href="/guides/react-hooks"
+  >
+    Reactive hooks for seamless React integration with live data updates
+  </Card>
+  <Card
+    title="🔒 Type-Safe Events"
     icon="shield-check"
     href="/concepts/events"
   >
     Full TypeScript support with runtime schema validation using Zod
-  </Card>
-  <Card
-    title="AI Streaming Support"
-    icon="robot"
-    href="/concepts/streaming"
-  >
-    Built-in streaming capabilities perfect for AI chat applications
-  </Card>
-  <Card
-    title="Multiplayer Ready"
-    icon="users"
-    href="/guides/multiplayer-games"
-  >
-    Presence tracking and real-time sync for 100+ concurrent users
   </Card>
 </CardGroup>
 
 ## Key Features
 
 <AccordionGroup>
-  <Accordion title="🔒 Type-Safe TypeScript" icon="typescript">
-    Full TypeScript support with Zod schema validation ensures your data is always correct at runtime.
+  <Accordion title="🗄️ Database-Like Queries" icon="database">
+    Query your real-time data with SQL-like syntax using findMany(), where(), orderBy(), and more. Built on Drizzle ORM integration.
   </Accordion>
 
-  <Accordion title="⚡ Built on Bun" icon="zap">
-    Leverages Bun's performance for blazing-fast event processing and WebSocket handling.
+  <Accordion title="🔀 CRDT Conflict Resolution" icon="arrows-rotate">
+    Built-in Conflict-free Replicated Data Types (CRDTs) including LWW-Register, G-Set, and G-Counter for true collaborative editing without conflicts.
   </Accordion>
 
-  <Accordion title="🧱 Event-Sourced Architecture" icon="blocks">
-    Append-only JSON event log with strict schema validation for reliable state management.
+  <Accordion title="🏪 Multi-Store Architecture" icon="layer-group">
+    Manage multiple isolated data stores with cross-store operations, derived stores, and shared synchronization for complex applications.
   </Accordion>
 
-  <Accordion title="🌐 Real-time WebSocket Sync" icon="wifi">
-    Efficient WebSocket synchronization with automatic reconnection and heartbeat monitoring.
+  <Accordion title="📡 Dual Sync Modes" icon="arrows-spin">
+    Choose between real-time WebSocket sync or git-like pull/push model. Perfect for offline-first apps that need reliable synchronization.
   </Accordion>
 
-  <Accordion title="🧠 Smart Tab Coordination" icon="brain">
-    Leader election using Web Locks API with IndexedDB fallback for older browsers.
+  <Accordion title="⚛️ React Hooks Integration" icon="react">
+    useKSync, useKSyncEvent, useKSyncLiveQuery and more reactive hooks for seamless React integration with automatic re-renders.
   </Accordion>
 
-  <Accordion title="🔁 State Materialization" icon="refresh">
-    Transform events into queryable state with custom materializer functions.
+  <Accordion title="🔒 Type-Safe TypeScript" icon="shield-check">
+    Full TypeScript support with Zod schema validation ensures your data is always correct at compile time and runtime.
+  </Accordion>
+
+  <Accordion title="🧱 Event-Sourced Architecture" icon="list">
+    Append-only JSON event log with strict schema validation for reliable state management and time-travel debugging.
   </Accordion>
 
   <Accordion title="💾 Local-First Storage" icon="hard-drive">
-    IndexedDB persistence with memory fallback for server environments.
+    IndexedDB persistence with memory fallback. Your app works offline and syncs when connectivity returns.
   </Accordion>
 
-  <Accordion title="🧪 Optimistic Updates" icon="flask">
-    Immediate local updates with conflict resolution and error handling.
+  <Accordion title="🧪 Optimistic Updates" icon="bolt">
+    Immediate local updates with automatic rollback on conflicts and intelligent conflict resolution.
+  </Accordion>
+
+  <Accordion title="👥 Presence & Collaboration" icon="users">
+    Real-time presence tracking and collaborative features perfect for multiplayer applications.
   </Accordion>
 </AccordionGroup>
 
@@ -153,12 +175,15 @@ await ksync.send("message", {
 
 kSync is perfect for:
 
-- **Real-time chat applications** with typing indicators and presence
-- **Collaborative editing tools** with conflict-free synchronization  
-- **AI-powered applications** with streaming responses
-- **Multiplayer games** with real-time player movement and state
-- **Offline-first mobile apps** with eventual consistency
-- **Dashboard applications** with live data updates
+- **📱 Real-time chat applications** with typing indicators, presence, and conflict-free message ordering
+- **📝 Collaborative editing tools** with CRDT-powered conflict-free synchronization (Google Docs style)
+- **🎮 Multiplayer games** with real-time player movement, state sync, and presence tracking
+- **🤖 AI-powered applications** with streaming responses and optimistic updates
+- **📊 Dashboard applications** with SQL-like queries and live data updates
+- **📋 Todo/Project management apps** with multi-store organization and offline sync
+- **🏪 E-commerce platforms** with real-time inventory, cart sync, and collaborative shopping
+- **📱 Offline-first mobile apps** with git-like sync when connectivity returns
+- **🏢 Enterprise tools** requiring complex data relationships and reliable synchronization
 
 ## Getting Started
 
@@ -206,7 +231,7 @@ kSync is perfect for:
   <Card
     title="Discord"
     icon="discord"
-    href="https://klastra.ai/discord"
+    href="https://discord.gg/ksync"
   >
     Join our community for help and discussions
   </Card>

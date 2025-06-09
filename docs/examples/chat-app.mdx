@@ -1,0 +1,885 @@
+---
+title: "Real-time Chat App"
+description: "Build a real-time chat application with kSync - demonstrates event-sourcing, WebSocket sync, and React integration"
+---
+
+# Real-time Chat Application
+
+Learn how to build a full-featured real-time chat application using kSync with WebSocket synchronization, React hooks, and event-sourcing.
+
+## Overview
+
+This example demonstrates:
+- Real-time messaging with WebSocket sync
+- User presence and typing indicators
+- Message history with pagination
+- Optimistic updates for instant UX
+- Offline support with automatic reconnection
+
+## Server Setup
+
+First, let's create a simple WebSocket server:
+
+```typescript server.ts
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
+
+const server = createServer();
+const wss = new WebSocketServer({ server });
+
+interface Client {
+  id: string;
+  ws: any;
+  room: string;
+  user: { id: string; name: string; avatar?: string };
+}
+
+const clients = new Map<string, Client>();
+
+wss.on('connection', (ws, request) => {
+  const clientId = generateId();
+  
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data.toString());
+      
+      switch (message.type) {
+        case 'join':
+          handleJoin(clientId, ws, message);
+          break;
+        case 'event':
+          handleEvent(clientId, message);
+          break;
+        case 'presence':
+          handlePresence(clientId, message);
+          break;
+      }
+    } catch (error) {
+      console.error('Message handling error:', error);
+    }
+  });
+
+  ws.on('close', () => {
+    handleDisconnect(clientId);
+  });
+});
+
+function handleJoin(clientId: string, ws: any, message: any) {
+  const client: Client = {
+    id: clientId,
+    ws,
+    room: message.room,
+    user: message.user
+  };
+  
+  clients.set(clientId, client);
+  
+  // Send join confirmation
+  ws.send(JSON.stringify({
+    type: 'joined',
+    clientId,
+    room: message.room
+  }));
+  
+  // Notify other clients in the room
+  broadcastToRoom(message.room, {
+    type: 'user_joined',
+    user: message.user
+  }, clientId);
+}
+
+function handleEvent(clientId: string, message: any) {
+  const client = clients.get(clientId);
+  if (!client) return;
+  
+  // Broadcast event to all clients in the same room
+  broadcastToRoom(client.room, {
+    type: 'event',
+    event: message.event
+  });
+}
+
+function handlePresence(clientId: string, message: any) {
+  const client = clients.get(clientId);
+  if (!client) return;
+  
+  // Broadcast presence update to room
+  broadcastToRoom(client.room, {
+    type: 'presence',
+    userId: client.user.id,
+    presence: message.presence
+  }, clientId);
+}
+
+function broadcastToRoom(room: string, message: any, excludeClient?: string) {
+  for (const [id, client] of clients) {
+    if (client.room === room && id !== excludeClient) {
+      client.ws.send(JSON.stringify(message));
+    }
+  }
+}
+
+function handleDisconnect(clientId: string) {
+  const client = clients.get(clientId);
+  if (client) {
+    broadcastToRoom(client.room, {
+      type: 'user_left',
+      userId: client.user.id
+    }, clientId);
+    clients.delete(clientId);
+  }
+}
+
+function generateId() {
+  return Math.random().toString(36).substring(2, 15);
+}
+
+server.listen(8080, () => {
+  console.log('Chat server running on port 8080');
+});
+```
+
+## Chat Store Setup
+
+Create the chat store with kSync:
+
+```typescript stores/chatStore.ts
+import { 
+  KSync, 
+  InMemoryStorage, 
+  WebSocketSyncClient 
+} from 'ksync';
+
+export interface Message {
+  id: string;
+  text: string;
+  author: User;
+  timestamp: number;
+  edited?: boolean;
+  replyTo?: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  avatar?: string;
+  status: 'online' | 'away' | 'offline';
+}
+
+export interface ChatState {
+  messages: Message[];
+  users: Map<string, User>;
+  typingUsers: Set<string>;
+  currentUser: User | null;
+}
+
+// Create chat store
+export const createChatStore = (roomId: string, user: User) => {
+  const ksync = new KSync<ChatState>({
+    storage: new InMemoryStorage(),
+    syncClient: new WebSocketSyncClient('ws://localhost:8080', {
+      auth: { type: 'none' }
+    })
+  });
+
+  // Set up materializer to compute chat state from events
+  ksync.materialize((events) => {
+    const state: ChatState = {
+      messages: [],
+      users: new Map(),
+      typingUsers: new Set(),
+      currentUser: user
+    };
+
+    for (const event of events) {
+      switch (event.type) {
+        case 'user_joined':
+          state.users.set(event.data.id, event.data);
+          break;
+
+        case 'user_left':
+          state.users.delete(event.data.userId);
+          state.typingUsers.delete(event.data.userId);
+          break;
+
+        case 'message_sent':
+          state.messages.push(event.data);
+          state.typingUsers.delete(event.data.author.id);
+          break;
+
+        case 'message_edited':
+          const messageIndex = state.messages.findIndex(
+            m => m.id === event.data.messageId
+          );
+          if (messageIndex >= 0) {
+            state.messages[messageIndex] = {
+              ...state.messages[messageIndex],
+              text: event.data.text,
+              edited: true
+            };
+          }
+          break;
+
+        case 'message_deleted':
+          state.messages = state.messages.filter(
+            m => m.id !== event.data.messageId
+          );
+          break;
+
+        case 'user_typing':
+          if (event.data.isTyping) {
+            state.typingUsers.add(event.data.userId);
+          } else {
+            state.typingUsers.delete(event.data.userId);
+          }
+          break;
+
+        case 'user_status_changed':
+          const user = state.users.get(event.data.userId);
+          if (user) {
+            user.status = event.data.status;
+          }
+          break;
+      }
+    }
+
+    // Sort messages by timestamp
+    state.messages.sort((a, b) => a.timestamp - b.timestamp);
+
+    return state;
+  });
+
+  // Connect to the room
+  ksync.connect().then(() => {
+    // Send join event
+    ksync.syncClient?.send({
+      type: 'join',
+      room: roomId,
+      user
+    });
+
+    // Emit user joined event
+    ksync.emit('user_joined', user);
+  });
+
+  return ksync;
+};
+```
+
+## React Chat Component
+
+Create the main chat component using kSync React hooks:
+
+```tsx components/ChatRoom.tsx
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  useKSync, 
+  useKSyncEvent, 
+  useKSyncOptimistic,
+  useKSyncPresence 
+} from 'ksync/react';
+import { createChatStore, Message, User } from '../stores/chatStore';
+
+interface ChatRoomProps {
+  roomId: string;
+  currentUser: User;
+}
+
+export const ChatRoom: React.FC<ChatRoomProps> = ({ roomId, currentUser }) => {
+  const [chatStore] = useState(() => createChatStore(roomId, currentUser));
+  const { ksync, isConnected } = useKSync(chatStore);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Get current state with optimistic updates
+  const { state: chatState, optimisticUpdate } = useKSyncOptimistic(
+    ksync,
+    (state) => state
+  );
+
+  // Handle real-time events
+  useKSyncEvent(ksync, 'message_sent', (event) => {
+    // Scroll to bottom when new message arrives
+    setTimeout(() => scrollToBottom(), 100);
+  });
+
+  // Presence management
+  const { presence, updatePresence } = useKSyncPresence(ksync, {
+    status: 'online',
+    lastSeen: Date.now()
+  });
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatState.messages.length]);
+
+  return (
+    <div className="chat-room">
+      <ChatHeader 
+        roomId={roomId}
+        users={chatState.users}
+        isConnected={isConnected}
+      />
+      
+      <MessageList 
+        messages={chatState.messages}
+        currentUser={currentUser}
+        typingUsers={chatState.typingUsers}
+      />
+      
+      <div ref={messagesEndRef} />
+      
+      <MessageInput 
+        ksync={ksync}
+        currentUser={currentUser}
+        optimisticUpdate={optimisticUpdate}
+      />
+    </div>
+  );
+};
+```
+
+## Message Components
+
+```tsx components/MessageList.tsx
+import React from 'react';
+import { Message, User } from '../stores/chatStore';
+
+interface MessageListProps {
+  messages: Message[];
+  currentUser: User;
+  typingUsers: Set<string>;
+}
+
+export const MessageList: React.FC<MessageListProps> = ({
+  messages,
+  currentUser,
+  typingUsers
+}) => {
+  return (
+    <div className="message-list">
+      {messages.map((message) => (
+        <MessageItem
+          key={message.id}
+          message={message}
+          isOwn={message.author.id === currentUser.id}
+        />
+      ))}
+      
+      {typingUsers.size > 0 && (
+        <TypingIndicator userIds={Array.from(typingUsers)} />
+      )}
+    </div>
+  );
+};
+
+interface MessageItemProps {
+  message: Message;
+  isOwn: boolean;
+}
+
+const MessageItem: React.FC<MessageItemProps> = ({ message, isOwn }) => {
+  return (
+    <div className={`message ${isOwn ? 'own' : 'other'}`}>
+      <div className="message-header">
+        <img 
+          src={message.author.avatar || '/default-avatar.png'} 
+          alt={message.author.name}
+          className="avatar"
+        />
+        <span className="author">{message.author.name}</span>
+        <span className="timestamp">
+          {new Date(message.timestamp).toLocaleTimeString()}
+        </span>
+        {message.edited && <span className="edited">edited</span>}
+      </div>
+      <div className="message-content">
+        {message.text}
+      </div>
+    </div>
+  );
+};
+
+const TypingIndicator: React.FC<{ userIds: string[] }> = ({ userIds }) => {
+  return (
+    <div className="typing-indicator">
+      <span className="typing-dots">...</span>
+      <span>{userIds.length === 1 ? 'Someone is' : 'People are'} typing</span>
+    </div>
+  );
+};
+```
+
+## Message Input Component
+
+```tsx components/MessageInput.tsx
+import React, { useState, useRef, useEffect } from 'react';
+import { KSync } from 'ksync';
+import { User, Message } from '../stores/chatStore';
+
+interface MessageInputProps {
+  ksync: KSync;
+  currentUser: User;
+  optimisticUpdate: (updater: (state: any) => any) => void;
+}
+
+export const MessageInput: React.FC<MessageInputProps> = ({
+  ksync,
+  currentUser,
+  optimisticUpdate
+}) => {
+  const [text, setText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value);
+    
+    // Handle typing indicators
+    if (!isTyping && e.target.value.length > 0) {
+      setIsTyping(true);
+      ksync.emit('user_typing', {
+        userId: currentUser.id,
+        isTyping: true
+      });
+    }
+
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Set timeout to stop typing indicator
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTyping(false);
+      ksync.emit('user_typing', {
+        userId: currentUser.id,
+        isTyping: false
+      });
+    }, 2000);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!text.trim()) return;
+
+    const messageId = generateId();
+    const message: Message = {
+      id: messageId,
+      text: text.trim(),
+      author: currentUser,
+      timestamp: Date.now()
+    };
+
+    // Optimistic update - add message immediately
+    optimisticUpdate((state) => ({
+      ...state,
+      messages: [...state.messages, message]
+    }));
+
+    // Clear input and typing state
+    setText('');
+    setIsTyping(false);
+    
+    // Stop typing indicator
+    ksync.emit('user_typing', {
+      userId: currentUser.id,
+      isTyping: false
+    });
+
+    try {
+      // Send actual message event
+      await ksync.emit('message_sent', message);
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      // In a real app, you might want to show an error indicator
+      // and allow retry
+    }
+
+    // Focus back to input
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="message-input">
+      <textarea
+        ref={inputRef}
+        value={text}
+        onChange={handleInputChange}
+        onKeyDown={handleKeyDown}
+        placeholder="Type a message..."
+        rows={1}
+        className="input-field"
+      />
+      <button 
+        type="submit" 
+        disabled={!text.trim()}
+        className="send-button"
+      >
+        Send
+      </button>
+    </form>
+  );
+};
+
+function generateId() {
+  return Math.random().toString(36).substring(2, 15);
+}
+```
+
+## Chat Header Component
+
+```tsx components/ChatHeader.tsx
+import React from 'react';
+import { User } from '../stores/chatStore';
+
+interface ChatHeaderProps {
+  roomId: string;
+  users: Map<string, User>;
+  isConnected: boolean;
+}
+
+export const ChatHeader: React.FC<ChatHeaderProps> = ({
+  roomId,
+  users,
+  isConnected
+}) => {
+  const onlineUsers = Array.from(users.values()).filter(
+    user => user.status === 'online'
+  );
+
+  return (
+    <div className="chat-header">
+      <div className="room-info">
+        <h2>Room: {roomId}</h2>
+        <div className="connection-status">
+          <span className={`status-dot ${isConnected ? 'connected' : 'disconnected'}`} />
+          {isConnected ? 'Connected' : 'Disconnected'}
+        </div>
+      </div>
+      
+      <div className="user-list">
+        <span className="user-count">
+          {onlineUsers.length} online
+        </span>
+        
+        <div className="user-avatars">
+          {onlineUsers.slice(0, 5).map(user => (
+            <img
+              key={user.id}
+              src={user.avatar || '/default-avatar.png'}
+              alt={user.name}
+              title={user.name}
+              className="user-avatar"
+            />
+          ))}
+          {onlineUsers.length > 5 && (
+            <span className="more-users">
+              +{onlineUsers.length - 5}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+```
+
+## App Component
+
+```tsx App.tsx
+import React, { useState } from 'react';
+import { KSyncProvider } from 'ksync/react';
+import { ChatRoom } from './components/ChatRoom';
+import { User } from './stores/chatStore';
+import './styles/chat.css';
+
+function App() {
+  const [currentUser] = useState<User>({
+    id: generateUserId(),
+    name: `User_${Math.random().toString(36).substring(2, 8)}`,
+    avatar: `https://avatars.dicebear.com/api/avataaars/${Math.random()}.svg`,
+    status: 'online'
+  });
+
+  const [roomId] = useState('general');
+
+  return (
+    <KSyncProvider>
+      <div className="app">
+        <header className="app-header">
+          <h1>kSync Chat</h1>
+          <div className="user-info">
+            <img src={currentUser.avatar} alt={currentUser.name} />
+            <span>{currentUser.name}</span>
+          </div>
+        </header>
+        
+        <main className="app-main">
+          <ChatRoom roomId={roomId} currentUser={currentUser} />
+        </main>
+      </div>
+    </KSyncProvider>
+  );
+}
+
+function generateUserId() {
+  return `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
+
+export default App;
+```
+
+## Styling
+
+```css styles/chat.css
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.app-header {
+  background: #2c3e50;
+  color: white;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.user-info img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.chat-room {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-header {
+  background: #ecf0f1;
+  padding: 1rem;
+  border-bottom: 1px solid #bdc3c7;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.connected {
+  background: #27ae60;
+}
+
+.status-dot.disconnected {
+  background: #e74c3c;
+}
+
+.user-list {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.user-avatars {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.user-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+.message-list {
+  flex: 1;
+  padding: 1rem;
+  overflow-y: auto;
+  background: #f8f9fa;
+}
+
+.message {
+  margin-bottom: 1rem;
+  max-width: 70%;
+}
+
+.message.own {
+  margin-left: auto;
+  text-align: right;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.875rem;
+  color: #6c757d;
+}
+
+.message.own .message-header {
+  justify-content: flex-end;
+}
+
+.message .avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.message-content {
+  background: white;
+  padding: 0.75rem;
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.message.own .message-content {
+  background: #007bff;
+  color: white;
+}
+
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-style: italic;
+  color: #6c757d;
+  margin: 0.5rem 0;
+}
+
+.typing-dots::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6c757d;
+  animation: typing 1.5s infinite;
+}
+
+@keyframes typing {
+  0%, 60%, 100% { opacity: 0; }
+  30% { opacity: 1; }
+}
+
+.message-input {
+  background: white;
+  padding: 1rem;
+  border-top: 1px solid #dee2e6;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.input-field {
+  flex: 1;
+  border: 1px solid #ced4da;
+  border-radius: 1.5rem;
+  padding: 0.75rem 1rem;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+}
+
+.input-field:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.send-button {
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.send-button:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.send-button:hover:not(:disabled) {
+  background: #0056b3;
+}
+```
+
+## Features Demonstrated
+
+This chat application showcases many kSync features:
+
+1. **Real-time Sync**: Messages appear instantly across all connected clients
+2. **Event Sourcing**: All chat events are stored and can be replayed
+3. **Optimistic Updates**: Messages appear immediately before server confirmation
+4. **Presence**: Shows who's online and typing
+5. **Automatic Reconnection**: Handles network disruptions gracefully
+6. **React Integration**: Uses kSync React hooks for clean component integration
+
+## Running the Example
+
+1. Install dependencies:
+```bash
+npm install ksync ws
+```
+
+2. Start the server:
+```bash
+npx ts-node server.ts
+```
+
+3. Start the React app:
+```bash
+npm run dev
+```
+
+4. Open multiple browser tabs to see real-time synchronization in action!
+
+## Next Steps
+
+Extend this example with:
+- Message persistence with SQLite storage
+- File uploads and media messages
+- Message reactions and threading
+- Push notifications
+- End-to-end encryption
+- Mobile app with React Native 
