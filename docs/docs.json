@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "almond",
-  "name": "kSync",
+  "name": "kSync v0.2",
   "colors": {
     "primary": "#000114",
     "light": "#00FFF2",
@@ -17,27 +17,35 @@
             "group": "Get Started",
             "pages": [
               "introduction",
+              "installation",
               "quickstart",
-              "installation"
+              "benchmarks"
             ]
           },
           {
-            "group": "Core Concepts",
+            "group": "Core Features",
+            "pages": [
+              "guides/factory-functions",
+              "guides/streaming",
+              "guides/presence",
+              "guides/configuration",
+              "guides/performance"
+            ]
+          },
+          {
+            "group": "Integration",
+            "pages": [
+              "guides/react-integration",
+              "guides/production",
+              "guides/migration"
+            ]
+          },
+          {
+            "group": "Legacy (v0.1)",
             "pages": [
               "concepts/architecture",
               "concepts/events",
-              "concepts/storage",
-              "concepts/crdt",
-              "concepts/drizzle-integration",
-              "concepts/multistore",
-              "concepts/git-sync"
-            ]
-          },
-          {
-            "group": "Guides",
-            "pages": [
-              "guides/basic-usage",
-              "guides/react-hooks"
+              "concepts/storage"
             ]
           }
         ]
@@ -46,9 +54,18 @@
         "tab": "API Reference",
         "groups": [
           {
-            "group": "API Documentation",
+            "group": "v0.2 API",
             "pages": [
-              "api-reference/introduction",
+              "api-reference/core",
+              "api-reference/factory-functions",
+              "api-reference/configuration",
+              "api-reference/streaming",
+              "api-reference/presence"
+            ]
+          },
+          {
+            "group": "Legacy API",
+            "pages": [
               "api-reference/ksync-class",
               "api-reference/storage",
               "api-reference/sync-client",
@@ -61,13 +78,20 @@
         "tab": "Examples",
         "groups": [
           {
-            "group": "Example Applications",
+            "group": "v0.2 Examples",
+            "pages": [
+              "examples/chat-app-v2",
+              "examples/ai-streaming-v2",
+              "examples/multiplayer-game-v2",
+              "examples/react-app"
+            ]
+          },
+          {
+            "group": "Legacy Examples",
             "pages": [
               "examples/introduction",
               "examples/chat-app",
-              "examples/todo-sync",
-              "examples/ai-streaming",
-              "examples/multiplayer-game"
+              "examples/todo-sync"
             ]
           }
         ]
@@ -77,11 +101,11 @@
       "anchors": [
         {
           "anchor": "GitHub",
-          "href": "https://github.com/klastra-ai/ksync"
+          "href": "https://github.com/0ni-x4/ksync"
         },
         {
-          "anchor": "Discord", 
-          "href": "https://discord.gg/klastra"
+          "anchor": "NPM",
+          "href": "https://www.npmjs.com/package/@klastra/ksync"
         }
       ]
     }
@@ -95,20 +119,20 @@
   "navbar": {
     "links": [
       {
-        "label": "Support",
-        "href": "mailto:support@klastra.ai"
+        "label": "v0.2.0",
+        "href": "https://github.com/0ni-x4/ksync/releases/tag/v0.2.0"
       }
     ],
     "primary": {
       "type": "button",
       "label": "GitHub",
-      "href": "https://github.com/klastra-ai/ksync"
+      "href": "https://github.com/0ni-x4/ksync"
     }
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/klastra_ai",
-      "github": "https://github.com/klastra-ai/ksync"
+      "github": "https://github.com/0ni-x4/ksync",
+      "x": "https://x.com/klastra_ai"
     }
   }
 }

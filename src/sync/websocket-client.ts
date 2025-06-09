@@ -59,12 +59,12 @@ export class WebSocketSyncClient implements KSyncSync {
           this.isConnecting = false
           this.log(`WebSocket error: ${error}`)
           if (this.reconnectAttempts === 0) {
-            reject(new KSyncError('Failed to connect', 'CONNECTION_ERROR', error))
+            reject(new KSyncError('Failed to connect', 'CONNECTION_ERROR'))
           }
         }
       } catch (error) {
         this.isConnecting = false
-        reject(new KSyncError('Failed to create WebSocket', 'CONNECTION_ERROR', error))
+        reject(new KSyncError('Failed to create WebSocket', 'CONNECTION_ERROR'))
       }
     })
   }
@@ -89,7 +89,7 @@ export class WebSocketSyncClient implements KSyncSync {
     try {
       this.ws!.send(JSON.stringify(message))
     } catch (error) {
-      throw new KSyncError('Failed to send message', 'SEND_ERROR', error)
+      throw new KSyncError('Failed to send message', 'SEND_ERROR')
     }
   }
 

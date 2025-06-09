@@ -1,48 +1,42 @@
-# kSync Documentation
+# kSync v0.2 Documentation
 
-This directory contains comprehensive documentation for kSync, built with [Mintlify](https://mintlify.com/).
+This directory contains comprehensive documentation for kSync v0.2, built with [Mintlify](https://mintlify.com/).
 
 ## 📁 Documentation Structure
 
 ```
 docs/
-├── mint.json                 # Mintlify configuration
-├── introduction.mdx          # Main introduction page
-├── quickstart.mdx           # 5-minute quickstart guide
-├── installation.mdx         # Installation and setup
-├── concepts/                # Core concepts
-│   ├── architecture.mdx     # System architecture
-│   ├── events.mdx          # Events and schemas
-│   ├── storage.mdx         # Storage options
-│   ├── sync.mdx            # Real-time synchronization
-│   ├── materializers.mdx   # State materialization
+├── docs.json                # Mintlify configuration
+├── introduction.mdx         # Main introduction page
+├── installation.mdx         # Installation and setup  
+├── quickstart.mdx          # 2-minute quickstart guide
+├── benchmarks.mdx          # Performance benchmarks
+├── guides/                 # v0.2 Feature guides
+│   ├── factory-functions.mdx # createChat(), createGame(), etc.
 │   ├── streaming.mdx       # AI streaming support
-│   └── presence.mdx        # Presence tracking
-├── guides/                 # Step-by-step guides
-│   ├── basic-usage.mdx     # Fundamentals
-│   ├── real-time-sync.mdx  # Multi-client sync
-│   ├── ai-streaming.mdx    # AI applications
-│   ├── multiplayer-games.mdx # Game development
-│   ├── offline-first.mdx   # Offline capabilities
-│   └── performance.mdx     # Optimization
+│   ├── presence.mdx        # User presence system
+│   ├── configuration.mdx   # 50+ config options
+│   ├── performance.mdx     # Performance optimization
+│   ├── react-integration.mdx # React hooks and components
+│   ├── production.mdx      # Production deployment
+│   └── migration.mdx       # v0.1 → v0.2 migration
 ├── api-reference/          # Complete API docs
-│   ├── introduction.mdx    # API overview
-│   ├── ksync-class.mdx     # Main KSync class
-│   ├── storage.mdx         # Storage interfaces
-│   ├── sync-client.mdx     # Sync client API
-│   └── types.mdx           # TypeScript types
+│   ├── core.mdx           # Core KSync v0.2 API
+│   ├── factory-functions.mdx # Factory function APIs
+│   ├── configuration.mdx   # Configuration interface
+│   ├── streaming.mdx       # Streaming API
+│   ├── presence.mdx        # Presence API
+│   └── [legacy files]      # v0.1 compatibility docs
 ├── examples/               # Real-world examples
-│   ├── introduction.mdx    # Examples overview
-│   ├── chat-app.mdx        # Chat application
-│   ├── todo-sync.mdx       # Todo synchronization
-│   ├── ai-streaming.mdx    # AI streaming chat
-│   └── multiplayer-game.mdx # Multiplayer game
-└── advanced/               # Advanced topics
-    ├── custom-storage.mdx  # Custom storage backends
-    ├── custom-sync.mdx     # Custom sync protocols
-    ├── error-handling.mdx  # Error management
-    ├── testing.mdx         # Testing strategies
-    └── deployment.mdx      # Production deployment
+│   ├── chat-app-v2.mdx     # Modern chat with presence
+│   ├── ai-streaming-v2.mdx # AI streaming application
+│   ├── multiplayer-game-v2.mdx # Real-time game
+│   ├── react-app.mdx       # React integration
+│   └── [legacy examples]   # v0.1 examples
+└── concepts/               # Legacy v0.1 concepts
+    ├── architecture.mdx    # Original architecture
+    ├── events.mdx         # Event system
+    └── storage.mdx        # Storage backends
 ```
 
 ## 🚀 Getting Started
@@ -97,19 +91,50 @@ description: 'Brief description for SEO and navigation'
 ---
 ```
 
+### v0.2 Examples
+
+Always showcase the new v0.2 APIs with factory functions:
+
+```typescript
+import { createChat, createGame, createAI } from '@klastra/ksync';
+
+// Chat application
+const chat = createChat('my-room', {
+  serverUrl: 'ws://localhost:8080'
+});
+
+// Multiplayer game
+const game = createGame('game-123', {
+  performance: { batchDelay: 5 }
+});
+
+// AI streaming
+const ai = createAI('assistant', {
+  features: { streaming: true }
+});
+```
+
 ### Mintlify Components
 
 Use Mintlify's built-in components for rich documentation:
 
-#### Cards
+#### Performance Callouts
+
+```mdx
+<Callout type="info">
+**Performance**: kSync v0.2 delivers 600k+ ops/sec with only 2MB memory for 1000 clients.
+</Callout>
+```
+
+#### Feature Cards
 
 ```mdx
 <CardGroup cols={2}>
-  <Card title="Feature 1" icon="star" href="/link">
-    Description of feature 1
+  <Card title="Factory Functions" icon="magic-wand" href="/guides/factory-functions">
+    Instant setup with createChat(), createGame(), createAI()
   </Card>
-  <Card title="Feature 2" icon="rocket" href="/link">
-    Description of feature 2
+  <Card title="600k+ ops/sec" icon="bolt" href="/benchmarks">
+    Enterprise-scale performance with memory efficiency
   </Card>
 </CardGroup>
 ```
@@ -118,214 +143,123 @@ Use Mintlify's built-in components for rich documentation:
 
 ```mdx
 <CodeGroup>
-```typescript TypeScript
-const example = 'TypeScript code';
+
+```typescript Chat Application
+import { createChat } from '@klastra/ksync';
+
+const chat = createChat('my-room');
+await chat.setPresence({ status: 'online' });
 ```
 
-```javascript JavaScript
-const example = 'JavaScript code';
+```typescript AI Application
+import { createAI } from '@klastra/ksync';
+
+const ai = createAI('assistant', {
+  features: { streaming: true }
+});
 ```
+
 </CodeGroup>
 ```
 
-#### Tabs
+#### Tabs for Different Use Cases
 
 ```mdx
 <Tabs>
-  <Tab title="Option 1">
-    Content for option 1
+  <Tab title="Chat Apps">
+    Use createChat() for instant presence and messaging
   </Tab>
-  <Tab title="Option 2">
-    Content for option 2
+  <Tab title="Games">
+    Use createGame() for low-latency real-time updates
+  </Tab>
+  <Tab title="AI Apps">
+    Use createAI() for streaming responses and conversations
   </Tab>
 </Tabs>
-```
-
-#### Accordions
-
-```mdx
-<AccordionGroup>
-  <Accordion title="Question 1" icon="question">
-    Answer to question 1
-  </Accordion>
-  <Accordion title="Question 2" icon="question">
-    Answer to question 2
-  </Accordion>
-</AccordionGroup>
-```
-
-#### Callouts
-
-```mdx
-<Note>
-  This is a note callout
-</Note>
-
-<Warning>
-  This is a warning callout
-</Warning>
-
-<Tip>
-  This is a tip callout
-</Tip>
-```
-
-### Code Examples
-
-Always include complete, runnable code examples:
-
-```typescript
-import { z } from 'zod';
-import { createKSync } from '@klastra/ksync';
-
-// Complete example that users can copy and run
-const ksync = createKSync();
-
-ksync.defineSchema('message', z.object({
-  content: z.string(),
-  author: z.string(),
-}));
-
-await ksync.send('message', {
-  content: 'Hello, world!',
-  author: 'Alice',
-});
 ```
 
 ## 🎯 Content Guidelines
 
 ### Writing Style
 
-- **Clear and concise**: Use simple language
-- **Action-oriented**: Start with verbs (Create, Configure, Build)
-- **User-focused**: Address the reader directly ("you")
-- **Progressive**: Build complexity gradually
+- **Enterprise-focused**: Emphasize production-ready performance
+- **Developer-friendly**: Show working code examples
+- **Results-oriented**: Include benchmark data and metrics
+- **Migration-aware**: Help users transition from v0.1
 
-### Code Standards
+### Code Examples
 
-- **Complete examples**: Always include imports and setup
-- **Type safety**: Show TypeScript usage
-- **Error handling**: Include error handling patterns
-- **Comments**: Explain non-obvious code
+Always include complete, runnable v0.2 examples:
 
-### Structure
+```typescript
+import { createKSync } from '@klastra/ksync';
 
-1. **Overview**: Brief introduction
-2. **Prerequisites**: What users need first
-3. **Step-by-step**: Numbered instructions
-4. **Examples**: Complete working code
-5. **Best practices**: Do's and don'ts
-6. **Next steps**: Links to related content
+// Complete example users can copy and run
+const ksync = createKSync({
+  serverUrl: 'ws://localhost:8080',
+  features: { presence: true, streaming: true }
+});
 
-## 🔗 Navigation
+// Listen for events
+ksync.on('message', (data, event) => {
+  console.log(`${event.userId}: ${data.text}`);
+});
 
-The navigation structure is defined in `mint.json`:
-
-```json
-{
-  "navigation": [
-    {
-      "group": "Get Started",
-      "pages": ["introduction", "quickstart", "installation"]
-    },
-    {
-      "group": "Core Concepts", 
-      "pages": ["concepts/architecture", "concepts/events"]
-    }
-  ]
-}
+// Send events with optimized batching
+await ksync.send('message', {
+  text: 'Hello world!',
+  timestamp: Date.now()
+});
 ```
 
-## 🎨 Customization
+### Performance Focus
 
-### Branding
+Always mention performance benefits:
 
-Update branding in `mint.json`:
+- **600k+ ops/sec** throughput
+- **2MB memory** for 1000 clients
+- **Sub-5ms latency** with smart batching
+- **Network resilient** - handles 10-200ms delays
 
-```json
-{
-  "name": "kSync",
-  "logo": {
-    "dark": "/logo/dark.svg",
-    "light": "/logo/light.svg"
-  },
-  "colors": {
-    "primary": "#0D9373",
-    "light": "#07C983",
-    "dark": "#0D9373"
-  }
-}
+### Backward Compatibility
+
+Note v0.1 compatibility where relevant:
+
+```typescript
+// v0.1 code still works
+const ksync = new KSync({ serverUrl: 'ws://localhost:8080' });
+await ksync.initialize();
+
+// v0.2 recommended approach  
+const ksync = createKSync({ serverUrl: 'ws://localhost:8080' });
+// Auto-connects, no initialization needed!
 ```
 
-### Analytics
+## 🚀 Key Documentation Priorities
 
-Add analytics tracking:
+### 1. Factory Functions
+Document the core value proposition - instant setup with optimized presets.
 
-```json
-{
-  "analytics": {
-    "gtag": {
-      "measurementId": "G-XXXXXXXXXX"
-    }
-  }
-}
-```
+### 2. Performance Benchmarks
+Showcase the enterprise-grade performance with real metrics.
 
-## 📊 SEO Optimization
+### 3. Configuration
+Document the 50+ configuration options with TypeScript IntelliSense.
 
-- **Descriptive titles**: Clear, searchable page titles
-- **Meta descriptions**: Compelling descriptions for each page
-- **Structured content**: Use headings hierarchically
-- **Internal linking**: Link between related pages
-- **Keywords**: Include relevant technical terms
+### 4. Streaming Support
+Highlight the new AI streaming capabilities.
 
-## 🚀 Deployment
+### 5. Migration Guide
+Help users transition smoothly from v0.1 to v0.2.
 
-### Mintlify Hosting
+## 📊 Documentation Metrics
 
-1. Connect your GitHub repository to Mintlify
-2. Configure custom domain (optional)
-3. Deploy automatically on push to main
+Track these metrics for documentation effectiveness:
+- Time to first success (target: <2 minutes)
+- Code example completeness (target: 100% runnable)
+- Performance claims verification (benchmarks included)
+- Migration path clarity (v0.1 → v0.2)
 
-### Custom Hosting
+---
 
-1. Build static files: `mintlify build`
-2. Deploy `_site` directory to your hosting provider
-3. Configure redirects and custom domain
-
-## 🤝 Contributing
-
-### Adding New Pages
-
-1. Create new `.mdx` file in appropriate directory
-2. Add frontmatter with title and description
-3. Update navigation in `mint.json`
-4. Test locally with `mintlify dev`
-
-### Updating Content
-
-1. Edit existing `.mdx` files
-2. Follow established patterns and style
-3. Test changes locally
-4. Submit pull request
-
-### Review Process
-
-- Technical accuracy review
-- Writing style review
-- Code example testing
-- Link validation
-
-## 📚 Resources
-
-- [Mintlify Documentation](https://mintlify.com/docs)
-- [MDX Documentation](https://mdxjs.com/)
-- [kSync GitHub Repository](https://github.com/klastra-ai/ksync)
-- [kSync Examples](../examples/)
-
-## 📞 Support
-
-For documentation questions or suggestions:
-- Open an issue on GitHub
-- Email: docs@klastra.ai
-- Discord: [Join our community](https://klastra.ai/discord) 
+**kSync v0.2 Documentation: Enterprise performance, developer-friendly APIs.** 

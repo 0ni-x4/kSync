@@ -98,7 +98,7 @@ export function useKSyncState<T = any>(
 
   useEffect(() => {
     const updateState = () => {
-      const newState = ksync.getState(materializerName);
+      const newState = ksync.getState();
       setState(newState);
     };
 
@@ -304,7 +304,7 @@ export function useKSyncStream(ksync: KSync, streamId?: string) {
   }, [ksync, streamId]);
 
   const sendChunk = useCallback(async (id: string, chunk: string) => {
-    await ksync.streamChunk(id, chunk);
+    await ksync.streamChunk(id, { data: chunk });
   }, [ksync]);
 
   return {

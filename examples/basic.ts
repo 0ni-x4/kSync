@@ -112,7 +112,7 @@ async function runExample() {
   });
 
   // Get the materialized chat state
-  const chatState = ksync.getState('chat') as ChatState | undefined;
+  const chatState = ksync.getState() as ChatState | undefined;
   
   console.log('\n📊 Current chat state:');
   console.log(`Users: ${Array.from(chatState?.users || []).join(', ')}`);

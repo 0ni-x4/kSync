@@ -1,6 +1,6 @@
 ---
 title: Introduction
-description: 'Welcome to kSync - Schema-driven, Bun-native, real-time sync engine for blazing-fast web and AI apps'
+description: 'Welcome to kSync v0.2 - Enterprise-grade, real-time sync engine for modern applications'
 ---
 
 <img
@@ -16,174 +16,227 @@ description: 'Welcome to kSync - Schema-driven, Bun-native, real-time sync engin
 
 ## What is kSync?
 
-kSync is a **next-generation, schema-driven sync engine** that brings database-like functionality to real-time applications. Designed for modern web and AI apps that need full control over data synchronization, collaboration, and offline functionality — without the complexity.
+kSync v0.2 is an **enterprise-grade, real-time sync engine** that delivers 600k+ operations per second with developer-friendly APIs. Designed for modern web and AI applications that need instant real-time collaboration, streaming support, and production-ready scalability — without the complexity.
 
 <CardGroup cols={2}>
   <Card
-    title="🗄️ Database-Like Queries"
-    icon="database"
-    href="/concepts/drizzle-integration"
+    title="🚀 Factory Functions"
+    icon="magic-wand"
+    href="/guides/factory-functions"
   >
-    Query your real-time data with familiar SQL-like syntax using our Drizzle ORM integration
+    Instant setup with createChat(), createGame(), createAI() - optimized for your use case
   </Card>
   <Card
-    title="🔀 Conflict-Free Sync"
-    icon="refresh"
-    href="/concepts/crdt"
+    title="⚡ 600k+ ops/sec"
+    icon="bolt"
+    href="/benchmarks"
   >
-    Built-in CRDT support for true conflict-free collaborative editing
+    Enterprise-scale performance with only 2MB memory for 1000 concurrent clients
   </Card>
   <Card
-    title="🏪 Multi-Store Architecture"
-    icon="layers"
-    href="/concepts/multistore"
+    title="🎯 Smart Defaults"
+    icon="bullseye"
+    href="/quickstart"
   >
-    Manage multiple isolated data stores with cross-store operations
+    Works instantly without configuration - just import and start building
   </Card>
   <Card
-    title="📡 Git-Like Sync"
-    icon="git-merge"
-    href="/concepts/git-sync"
+    title="📡 Streaming Support"
+    icon="stream"
+    href="/guides/streaming"
   >
-    Pull/push synchronization model that works great for offline-first apps
+    Real-time AI responses and live data streams with built-in chunk management
   </Card>
   <Card
-    title="⚛️ React Integration"
-    icon="react"
-    href="/guides/react-hooks"
+    title="👥 Presence System"
+    icon="users"
+    href="/guides/presence"
   >
-    Reactive hooks for seamless React integration with live data updates
+    Advanced user presence with metadata, status tracking, and room management
   </Card>
   <Card
-    title="🔒 Type-Safe Events"
-    icon="shield-check"
-    href="/concepts/events"
+    title="🔧 50+ Config Options"
+    icon="cog"
+    href="/api-reference/configuration"
   >
-    Full TypeScript support with runtime schema validation using Zod
+    Comprehensive configuration with full TypeScript documentation
   </Card>
 </CardGroup>
 
 ## Key Features
 
 <AccordionGroup>
-  <Accordion title="🗄️ Database-Like Queries" icon="database">
-    Query your real-time data with SQL-like syntax using findMany(), where(), orderBy(), and more. Built on Drizzle ORM integration.
+  <Accordion title="🚀 Factory Functions & Smart Defaults" icon="magic-wand">
+    Get started instantly with createKSync(), createChat(), createTodos(), createGame(), createAI() - each optimized for specific use cases with intelligent defaults.
   </Accordion>
 
-  <Accordion title="🔀 CRDT Conflict Resolution" icon="arrows-rotate">
-    Built-in Conflict-free Replicated Data Types (CRDTs) including LWW-Register, G-Set, and G-Counter for true collaborative editing without conflicts.
+  <Accordion title="⚡ Enterprise Performance" icon="bolt">
+    600k+ operations per second with only 2MB memory usage for 1000 clients. Network resilient with graceful 10-200ms latency handling.
   </Accordion>
 
-  <Accordion title="🏪 Multi-Store Architecture" icon="layer-group">
-    Manage multiple isolated data stores with cross-store operations, derived stores, and shared synchronization for complex applications.
+  <Accordion title="📡 Advanced Streaming" icon="stream">
+    Built-in support for AI streaming responses, live data streams, and real-time chunk processing with automatic flow control.
   </Accordion>
 
-  <Accordion title="📡 Dual Sync Modes" icon="arrows-spin">
-    Choose between real-time WebSocket sync or git-like pull/push model. Perfect for offline-first apps that need reliable synchronization.
+  <Accordion title="👥 Comprehensive Presence" icon="users">
+    Real-time user presence with status tracking, metadata support, room-based isolation, and automatic cleanup.
   </Accordion>
 
-  <Accordion title="⚛️ React Hooks Integration" icon="react">
-    useKSync, useKSyncEvent, useKSyncLiveQuery and more reactive hooks for seamless React integration with automatic re-renders.
+  <Accordion title="🌐 Multi-Room Architecture" icon="layer-group">
+    Automatic room management and routing with isolated event streams and presence tracking per room.
   </Accordion>
 
-  <Accordion title="🔒 Type-Safe TypeScript" icon="shield-check">
-    Full TypeScript support with Zod schema validation ensures your data is always correct at compile time and runtime.
+  <Accordion title="💾 Offline-First Design" icon="hard-drive">
+    Advanced offline support with event queueing, persistence, and automatic sync when reconnected.
   </Accordion>
 
-  <Accordion title="🧱 Event-Sourced Architecture" icon="list">
-    Append-only JSON event log with strict schema validation for reliable state management and time-travel debugging.
+  <Accordion title="🔧 Comprehensive Configuration" icon="cog">
+    50+ configuration options with full TypeScript documentation covering performance, authentication, debugging, and features.
   </Accordion>
 
-  <Accordion title="💾 Local-First Storage" icon="hard-drive">
-    IndexedDB persistence with memory fallback. Your app works offline and syncs when connectivity returns.
+  <Accordion title="🔒 Enterprise Security" icon="shield-check">
+    Authentication providers, token management, client-side encryption options, and secure WebSocket connections.
   </Accordion>
 
-  <Accordion title="🧪 Optimistic Updates" icon="bolt">
-    Immediate local updates with automatic rollback on conflicts and intelligent conflict resolution.
+  <Accordion title="📊 Built-in Monitoring" icon="chart-line">
+    Performance metrics, debugging tools, status monitoring, and comprehensive logging for production deployments.
   </Accordion>
 
-  <Accordion title="👥 Presence & Collaboration" icon="users">
-    Real-time presence tracking and collaborative features perfect for multiplayer applications.
+  <Accordion title="🔄 Backward Compatibility" icon="arrows-rotate">
+    All v0.1 APIs continue to work without changes while gaining access to new v0.2 features.
   </Accordion>
 </AccordionGroup>
 
-## Why Choose kSync?
+## Why Choose kSync v0.2?
 
 <Tabs>
-  <Tab title="Simple">
-    **A 15-year-old could understand and implement it**
+  <Tab title="Instant">
+    **Ready in seconds, not hours**
     
-    kSync's architecture is intentionally simple. Events go in, state comes out. No complex abstractions or hidden magic.
+    Factory functions with smart defaults mean you can start building real-time features immediately without complex configuration.
   </Tab>
   
   <Tab title="Fast">
-    **Built on Bun with minimal overhead**
+    **600k+ ops/sec performance**
     
-    Leverages Bun's native performance with efficient event batching, connection pooling, and optimized data structures.
+    Enterprise-grade performance with memory efficiency - only 2MB for 1000 concurrent clients with 10k events.
   </Tab>
   
-  <Tab title="Local-First">
-    **Works offline, syncs when online**
+  <Tab title="Smart">
+    **Intelligent defaults that just work**
     
-    Your app continues working even when the network is down. Events are stored locally and synced when connectivity returns.
+    Automatically optimized for your use case - chat apps get presence, games get low-latency, AI apps get streaming.
   </Tab>
   
-  <Tab title="Type-Safe">
-    **Full TypeScript support with runtime validation**
+  <Tab title="Scalable">
+    **From prototype to production**
     
-    Catch errors at compile time with TypeScript, and ensure data integrity at runtime with Zod schemas.
+    Proven to handle 500+ concurrent clients with network resilience and enterprise-ready monitoring.
   </Tab>
   
-  <Tab title="Minimal">
-    **No bloat, just the essentials**
+  <Tab title="Developer-Friendly">
+    **API designed for humans**
     
-    Only includes what you need for real-time sync. No unnecessary dependencies or features you'll never use.
+    Comprehensive TypeScript support, clear error messages, and extensive documentation with real-world examples.
   </Tab>
 </Tabs>
 
-## Quick Example
+## Quick Examples
 
-Here's how simple it is to get started with kSync:
+### Instant Chat Application
 
 ```typescript
-import { z } from 'zod';
-import { ksync } from '@klastra/ksync';
+import { createChat } from '@klastra/ksync';
 
-// Define your event schema
-ksync.defineSchema("message", z.object({
-  id: z.string(),
-  content: z.string(),
-  author: z.string(),
-  createdAt: z.number(),
-}));
-
-// Listen to events
-ksync.on("message", (event) => {
-  console.log(`New message: ${event.data.content}`);
+// Chat app with presence and optimized batching
+const chat = createChat('my-room', {
+  serverUrl: 'ws://localhost:8080'
 });
 
-// Send events (stored locally first, then synced)
-await ksync.send("message", {
-  id: "msg-1",
-  content: "Hello world!",
-  author: "Alice",
-  createdAt: Date.now(),
+// Set user presence
+await chat.setPresence({
+  status: 'online',
+  metadata: { name: 'Alice', avatar: 'avatar-url' }
+});
+
+// Send messages
+await chat.send('message', {
+  text: 'Hello everyone!',
+  author: 'Alice',
+  timestamp: Date.now()
+});
+
+// Listen for messages
+chat.on('message', (data) => {
+  console.log(`${data.author}: ${data.text}`);
+});
+```
+
+### AI Streaming Application
+
+```typescript
+import { createAI } from '@klastra/ksync';
+
+// AI with streaming responses
+const ai = createAI('assistant', {
+  features: { streaming: true }
+});
+
+// Listen for streaming chunks
+ai.on('stream-chunk', (data) => {
+  process.stdout.write(data.data); // Live AI response
+});
+
+// Start AI response stream
+await ai.startStream('response-1');
+await ai.streamChunk('response-1', { data: 'Hello! ' });
+await ai.streamChunk('response-1', { data: 'How can I help?' });
+await ai.endStream('response-1');
+```
+
+### Basic Real-time Sync
+
+```typescript
+import { createKSync } from '@klastra/ksync';
+
+// Works instantly with smart defaults
+const ksync = createKSync();
+
+// Listen for events
+ksync.on('message', (data, event) => {
+  console.log(`${event.userId}: ${data.text}`);
+});
+
+// Send events (instant local, auto-synced if server configured)
+await ksync.send('message', {
+  text: 'Hello world!',
+  timestamp: Date.now()
 });
 ```
 
 ## Use Cases
 
-kSync is perfect for:
+kSync v0.2 is perfect for:
 
-- **📱 Real-time chat applications** with typing indicators, presence, and conflict-free message ordering
-- **📝 Collaborative editing tools** with CRDT-powered conflict-free synchronization (Google Docs style)
-- **🎮 Multiplayer games** with real-time player movement, state sync, and presence tracking
-- **🤖 AI-powered applications** with streaming responses and optimistic updates
-- **📊 Dashboard applications** with SQL-like queries and live data updates
-- **📋 Todo/Project management apps** with multi-store organization and offline sync
-- **🏪 E-commerce platforms** with real-time inventory, cart sync, and collaborative shopping
-- **📱 Offline-first mobile apps** with git-like sync when connectivity returns
-- **🏢 Enterprise tools** requiring complex data relationships and reliable synchronization
+- **💬 Real-time chat applications** with presence, typing indicators, and multi-room support
+- **🎮 Multiplayer games** with low-latency updates, player presence, and state synchronization
+- **🤖 AI-powered applications** with streaming responses, real-time feedback, and conversation management
+- **📝 Collaborative editing** with conflict-free operations and real-time cursors
+- **📊 Live dashboards** with real-time data updates and user presence
+- **📋 Project management** with task updates, team collaboration, and offline sync
+- **🏪 E-commerce platforms** with real-time inventory, cart sync, and customer presence
+- **📱 Mobile applications** with offline-first design and automatic sync
+- **🏢 Enterprise tools** requiring high performance, security, and reliability
+
+## Performance at Scale
+
+<Callout type="info">
+**Enterprise Benchmarks**: kSync v0.2 delivers exceptional performance:
+- 🎯 **600k+ ops/sec** for 500 concurrent clients
+- 🧠 **2MB memory** for 1000 clients + 10k events  
+- 🌐 **Network resilient** - handles 10-200ms latency gracefully
+- 💬 **300k+ ops/sec** for high-load chat across multiple rooms
+</Callout>
 
 ## Getting Started
 
@@ -193,7 +246,7 @@ kSync is perfect for:
     icon="play"
     href="/quickstart"
   >
-    Get up and running with kSync in under 5 minutes
+    Get up and running with kSync v0.2 in under 2 minutes
   </Card>
   <Card
     title="Installation"
@@ -203,43 +256,21 @@ kSync is perfect for:
     Install kSync and set up your development environment
   </Card>
   <Card
-    title="Core Concepts"
-    icon="lightbulb"
-    href="/concepts/architecture"
+    title="Factory Functions"
+    icon="magic-wand"
+    href="/guides/factory-functions"
   >
-    Understand the fundamental concepts behind kSync
+    Learn about optimized presets for different application types
   </Card>
   <Card
-    title="Examples"
-    icon="code"
-    href="/examples/introduction"
+    title="Performance Benchmarks"
+    icon="chart-line"
+    href="/benchmarks"
   >
-    Explore real-world examples and use cases
+    See detailed performance metrics and optimization guides
   </Card>
 </CardGroup>
 
-## Community & Support
+---
 
-<CardGroup cols={3}>
-  <Card
-    title="GitHub"
-    icon="github"
-    href="https://github.com/klastra-ai/ksync"
-  >
-    Star us on GitHub and contribute to the project
-  </Card>
-  <Card
-    title="Discord"
-    icon="discord"
-    href="https://discord.gg/ksync"
-  >
-    Join our community for help and discussions
-  </Card>
-  <Card
-    title="Support"
-    icon="life-ring"
-    href="mailto:support@klastra.ai"
-  >
-    Get professional support for your project
-  </Card>
-</CardGroup> 
+**kSync v0.2: From prototype to production, without the complexity.** 

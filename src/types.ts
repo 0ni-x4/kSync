@@ -1,22 +1,24 @@
 import { z } from 'zod';
 
 // Core event interface - much more efficient
-export interface KSyncEvent<T = any> {
+export interface KSyncEvent {
   id: string;
   type: string;
-  data: T;
+  data: any;
   timestamp: number;
-  clientId: string;
   version: number;
+  userId: string;
+  clientId?: string;  // Backward compatibility
+  metadata?: Record<string, any>;
+  ttl?: number;
+  priority?: 'low' | 'normal' | 'high';
 }
 
 // Streaming support for AI apps
 export interface StreamChunk {
-  streamId: string;
-  sequence: number;
-  data: string;
-  isComplete: boolean;
-  timestamp: number;
+  data: any;
+  metadata?: Record<string, any>;
+  complete?: boolean;
 }
 
 export interface StreamState {
@@ -30,18 +32,23 @@ export interface StreamState {
 // WebSocket message types
 export type WSMessageType = 
   | 'event' 
+  | 'event-batch'
   | 'sync-request' 
   | 'sync-response' 
   | 'ping' 
   | 'pong'
+  | 'stream-start'
   | 'stream-chunk'
+  | 'stream-end'
   | 'stream-complete'
   | 'presence-update'
+  | 'join'
+  | 'leave'
+  | 'auth'
 
-export interface WebSocketMessage<T = any> {
-  type: WSMessageType;
-  data?: T;
-  requestId?: string;
+export interface WebSocketMessage {
+  type: string;
+  data?: any;
 }
 
 // Presence system for efficient state tracking
@@ -67,10 +74,8 @@ export interface KSyncConfig {
 
 // Storage interface
 export interface KSyncStorage {
-  getEvents(fromVersion?: number): Promise<KSyncEvent[]>;
-  storeEvent(event: KSyncEvent): Promise<void>;
-  storeEvents(events: KSyncEvent[]): Promise<void>;
-  getLastVersion(): Promise<number>;
+  saveEvents(events: KSyncEvent[]): Promise<void>;
+  loadEvents(): Promise<KSyncEvent[]>;
   clear(): Promise<void>;
 }
 
@@ -79,10 +84,9 @@ export interface KSyncSync {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   send(message: WebSocketMessage): Promise<void>;
-  isConnected(): boolean;
-  onMessage(callback: (message: WebSocketMessage) => void): void;
-  onConnect(callback: () => void): void;
-  onDisconnect(callback: () => void): void;
+  onMessage(handler: (message: WebSocketMessage) => void): void;
+  onConnect(handler: () => void): void;
+  onDisconnect(handler: () => void): void;
 }
 
 // Type-safe event definitions
@@ -98,11 +102,7 @@ export interface EventBatch {
 
 // Error types
 export class KSyncError extends Error {
-  constructor(
-    message: string,
-    public code: string,
-    public details?: any
-  ) {
+  constructor(message: string, public code: string) {
     super(message);
     this.name = 'KSyncError';
   }
@@ -124,7 +124,7 @@ export interface PresenceOptions {
 }
 
 // Event listener types
-export type EventListener<T = any> = (event: KSyncEvent<T>) => void;
+export type EventListener<T = any> = (event: KSyncEvent) => void;
 export type StreamListener = (chunk: StreamChunk) => void;
 export type PresenceListener = (presence: PresenceState) => void;
 
@@ -132,4 +132,12 @@ export type PresenceListener = (presence: PresenceState) => void;
 export interface CRDTConfig {
   enableCRDT?: boolean;
   crdtTypes?: Record<string, 'lww' | 'gset' | 'gcounter' | 'map'>;
+}
+
+// Presence info
+export interface PresenceInfo {
+  userId: string;
+  status: 'online' | 'away' | 'offline';
+  lastSeen: number;
+  metadata?: Record<string, any>;
 } 

@@ -247,6 +247,7 @@ class GameServer {
             newScore: player.score
           },
           timestamp: Date.now(),
+          userId: 'server',
           clientId: 'server',
           version: ++this.version
         }
@@ -338,6 +339,7 @@ class GameServer {
           type: 'coin-spawned',
           data: coin,
           timestamp: Date.now(),
+          userId: 'server',
           clientId: 'server',
           version: ++this.version
         }

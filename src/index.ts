@@ -1,5 +1,5 @@
-// Core exports
-export { KSync } from './core';
+// Core exports (new easy-to-use API)
+export { KSync, createKSync, createChat, createTodos, createGame, createAI, KSyncConfig } from './core';
 export * from './types';
 
 // Storage implementations
@@ -15,29 +15,30 @@ export { generateId } from './utils';
 // New feature exports
 export * from './crdt';
 export * from './drizzle';
-export * from './multistore';
-export * from './sync/git-sync';
+// TODO: Fix these modules to work with new API
+// export * from './multistore';
+// export * from './sync/git-sync';
+// export * from './react';
+// export * from './simple';
 
-// React hooks (optional peer dependency)
-export * from './react';
-
-// Factory function for easy setup
-export function createKSync(config: import('./types').KSyncConfig = {}) {
+// Legacy factory (deprecated - use new createKSync from core)
+export function legacyCreateKSync(config: import('./types').KSyncConfig = {}) {
   const { KSync } = require('./core');
   return new KSync(config);
 }
 
-// Factory for multistore
-export function createMultistore(config: import('./multistore').MultistoreConfig) {
-  const { createMultistore } = require('./multistore');
-  return createMultistore(config);
-}
+// TODO: Enable these when modules are fixed
+// // Factory for multistore
+// export function createMultistore(config: import('./multistore').MultistoreConfig) {
+//   const { createMultistore } = require('./multistore');
+//   return createMultistore(config);
+// }
 
-// Factory for git sync
-export function createGitSync(config: import('./sync/git-sync').GitSyncConfig, clientId: string) {
-  const { createGitSync } = require('./sync/git-sync');
-  return createGitSync(config, clientId);
-}
+// // Factory for git sync
+// export function createGitSync(config: import('./sync/git-sync').GitSyncConfig, clientId: string) {
+//   const { createGitSync } = require('./sync/git-sync');
+//   return createGitSync(config, clientId);
+// }
 
 // Default instance for simple usage
-export const ksync = createKSync(); 
+export const ksync = legacyCreateKSync(); 

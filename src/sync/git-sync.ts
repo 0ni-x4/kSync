@@ -151,6 +151,7 @@ export class GitSyncClient implements KSyncSync {
     // Convert events to CRDT events with vector clocks
     const crdtEvents: CRDTEvent[] = eventsToSync.map(event => ({
       ...event,
+      clientId: event.clientId || this.clientId,
       vectorClock: this.syncState.vectorClock
     }));
 

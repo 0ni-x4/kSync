@@ -149,8 +149,8 @@ async function runSyncExample() {
     // Show final state from both clients
     console.log('\n📊 Final state comparison:');
     
-    const state1 = client1.getState('todos') as TodoState | undefined;
-    const state2 = client2.getState('todos') as TodoState | undefined;
+    const state1 = client1.getState() as TodoState | undefined;
+    const state2 = client2.getState() as TodoState | undefined;
 
     console.log('\nClient 1 todos:');
     state1?.todos.forEach((todo: any, id: string) => {

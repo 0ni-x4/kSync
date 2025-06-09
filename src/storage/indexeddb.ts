@@ -120,6 +120,14 @@ export class IndexedDBStorage implements KSyncStorage {
     });
   }
 
+  async saveEvents(events: KSyncEvent[]): Promise<void> {
+    return this.storeEvents(events);
+  }
+
+  async loadEvents(): Promise<KSyncEvent[]> {
+    return this.getEvents();
+  }
+
   async clear(): Promise<void> {
     const db = await this.getDB();
     

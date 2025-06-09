@@ -1,6 +1,6 @@
 ---
 title: 'Quickstart'
-description: 'Get up and running with kSync in under 5 minutes'
+description: 'Get up and running with kSync v0.2 in under 2 minutes'
 ---
 
 ## Installation
@@ -8,520 +8,474 @@ description: 'Get up and running with kSync in under 5 minutes'
 <CodeGroup>
 
 ```bash npm
-npm install @klastra/ksync zod
+npm install @klastra/ksync
 ```
 
 ```bash yarn
-yarn add @klastra/ksync zod
+yarn add @klastra/ksync
 ```
 
 ```bash pnpm
-pnpm add @klastra/ksync zod
+pnpm add @klastra/ksync
 ```
 
 ```bash bun
-bun add @klastra/ksync zod
+bun add @klastra/ksync
 ```
 
 </CodeGroup>
 
-For React applications, also install React:
+<Note>
+**No dependencies required!** kSync v0.2 works out of the box with smart defaults. Zod is now optional for advanced schema validation.
+</Note>
 
-```bash
-npm install react react-dom  # React hooks integration
-```
+## Quick Start (30 seconds)
 
-## Basic Setup
-
-Let's create a simple todo application to demonstrate kSync's powerful new features including database-like queries, CRDTs, and React integration.
-
-### 1. Define Your Data Schema
-
-First, define the structure of your data using Zod schemas:
+The fastest way to get real-time sync working:
 
 ```typescript
-import { z } from 'zod';
-import { ksync } from '@klastra/ksync';
+import { createKSync } from '@klastra/ksync';
 
-// Define data schemas
-const TodoSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  completed: z.boolean(),
-  priority: z.enum(['low', 'medium', 'high']),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-  userId: z.string()
+// Works instantly with smart defaults
+const ksync = createKSync();
+
+// Listen for events
+ksync.on('message', (data, event) => {
+  console.log(`${event.userId}: ${data.text}`);
 });
 
-// Create kSync with Drizzle adapter for database-like queries
-const todoApp = ksync.createDrizzleAdapter({
-  schema: {
-    todos: TodoSchema
+// Send events (instant local, auto-synced if server configured)
+await ksync.send('message', {
+  text: 'Hello world!',
+  timestamp: Date.now()
+});
+
+// Get current state
+const state = ksync.getState();
+```
+
+## Factory Functions (Optimized Presets)
+
+kSync v0.2 provides factory functions optimized for different use cases:
+
+<Tabs>
+  <Tab title="Chat Application">
+    ```typescript
+    import { createChat } from '@klastra/ksync';
+
+    // Chat with presence and optimized batching
+    const chat = createChat('my-room', {
+      serverUrl: 'ws://localhost:8080'
+    });
+
+    // Set user presence
+    await chat.setPresence({
+      status: 'online',
+      metadata: { name: 'Alice', avatar: 'avatar-url' }
+    });
+
+    // Send messages
+    await chat.send('message', {
+      text: 'Hello everyone!',
+      author: 'Alice',
+      timestamp: Date.now()
+    });
+
+    // Listen for messages and presence
+    chat.on('message', (data) => {
+      console.log(`${data.author}: ${data.text}`);
+    });
+
+    chat.on('presence-update', (data) => {
+      console.log(`${data.metadata?.name} is ${data.status}`);
+    });
+    ```
+  </Tab>
+
+  <Tab title="Multiplayer Game">
+    ```typescript
+    import { createGame } from '@klastra/ksync';
+
+    // Game with low-latency updates
+    const game = createGame('game-123', {
+      performance: { batchSize: 50, batchDelay: 5 }
+    });
+
+    // Player actions
+    await game.send('player-move', {
+      playerId: 'player-1',
+      x: 100,
+      y: 200,
+      timestamp: Date.now()
+    });
+
+    // Real-time game state
+    game.on('player-move', (data) => {
+      updatePlayerPosition(data.playerId, data.x, data.y);
+    });
+
+    // Player presence
+    await game.setPresence({
+      status: 'playing',
+      metadata: { level: 5, score: 1200 }
+    });
+    ```
+  </Tab>
+
+  <Tab title="AI Application">
+    ```typescript
+    import { createAI } from '@klastra/ksync';
+
+    // AI with streaming responses
+    const ai = createAI('assistant', {
+      features: { streaming: true }
+    });
+
+    // Listen for streaming chunks
+    ai.on('stream-chunk', (data) => {
+      process.stdout.write(data.data); // Live AI response
+    });
+
+    ai.on('stream-end', (data) => {
+      console.log('\nResponse complete!');
+    });
+
+    // Start AI response stream
+    await ai.startStream('response-1');
+    await ai.streamChunk('response-1', { data: 'Hello! ' });
+    await ai.streamChunk('response-1', { data: 'How can I help?' });
+    await ai.endStream('response-1');
+    ```
+  </Tab>
+
+  <Tab title="Todo Application">
+    ```typescript
+    import { createTodos } from '@klastra/ksync';
+
+    // Todo app with offline persistence
+    const todos = createTodos({
+      offline: { persistence: true, queueSize: 5000 }
+    });
+
+    // Create todo
+    await todos.send('todo-created', {
+      id: 'todo-1',
+      title: 'Buy groceries',
+      completed: false,
+      createdAt: Date.now()
+    });
+
+    // Listen for changes
+    todos.on('todo-created', (data) => {
+      addTodoToUI(data);
+    });
+
+    todos.on('todo-updated', (data) => {
+      updateTodoInUI(data);
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Real-time Chat Example
+
+Let's build a complete chat application in under 50 lines:
+
+```typescript
+import { createChat } from '@klastra/ksync';
+
+// Create chat instance
+const chat = createChat('general', {
+  serverUrl: 'ws://localhost:8080',  // Optional - works offline without server
+  features: { presence: true }
+});
+
+// Set user info
+await chat.setPresence({
+  status: 'online',
+  metadata: { 
+    name: 'Alice',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alice'
   }
 });
 
-// Define event schemas for mutations
-ksync.defineSchema('todo-created', TodoSchema);
-ksync.defineSchema('todo-updated', TodoSchema.partial().extend({ id: z.string() }));
-ksync.defineSchema('todo-deleted', z.object({ id: z.string() }));
-```
+// UI Elements (assuming HTML exists)
+const messagesDiv = document.getElementById('messages');
+const messageInput = document.getElementById('messageInput');
+const sendButton = document.getElementById('sendButton');
+const presenceDiv = document.getElementById('presence');
 
-### 2. Database-Like Queries
+// Send message function
+async function sendMessage() {
+  const text = messageInput.value.trim();
+  if (!text) return;
 
-Query your real-time data with familiar SQL-like syntax:
-
-```typescript
-// Find all todos
-const allTodos = await todoApp.todos.findMany();
-
-// Find active todos
-const activeTodos = await todoApp.todos.findMany({
-  where: { completed: false },
-  orderBy: { priority: 'desc', createdAt: 'desc' }
-});
-
-// Find high priority todos
-const highPriorityTodos = await todoApp.todos.findMany({
-  where: { 
-    priority: 'high',
-    completed: false 
-  },
-  limit: 10
-});
-
-// Search todos
-const searchResults = await todoApp.todos.findMany({
-  where: {
-    title: { contains: 'project' }
-  }
-});
-
-console.log('Active todos:', activeTodos);
-```
-
-### 3. Create and Update Data
-
-Use events to create and update data:
-
-```typescript
-// Create a new todo
-async function createTodo(title: string, priority: 'low' | 'medium' | 'high' = 'medium') {
-  const todo = {
-    id: `todo-${Date.now()}`,
-    title,
-    completed: false,
-    priority,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    userId: 'user-123'
-  };
-  
-  await ksync.send('todo-created', todo);
-  return todo;
-}
-
-// Update a todo
-async function updateTodo(id: string, updates: Partial<TodoSchema>) {
-  await ksync.send('todo-updated', {
-    id,
-    ...updates,
-    updatedAt: Date.now()
+  await chat.send('message', {
+    text,
+    author: 'Alice',
+    timestamp: Date.now(),
+    id: `msg-${Date.now()}`
   });
+
+  messageInput.value = '';
 }
 
-// Delete a todo
-async function deleteTodo(id: string) {
-  await ksync.send('todo-deleted', { id });
+// Listen for messages
+chat.on('message', (data) => {
+  const messageEl = document.createElement('div');
+  messageEl.innerHTML = `
+    <strong>${data.author}</strong>: ${data.text}
+    <small>(${new Date(data.timestamp).toLocaleTimeString()})</small>
+  `;
+  messagesDiv.appendChild(messageEl);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+});
+
+// Listen for presence updates
+chat.on('presence-update', (data) => {
+  updatePresenceUI();
+});
+
+function updatePresenceUI() {
+  const presence = chat.getPresence();
+  presenceDiv.innerHTML = presence
+    .map(p => `<span class="user ${p.status}">${p.metadata?.name || p.userId}</span>`)
+    .join('');
 }
 
-// Usage
-await createTodo('Buy groceries', 'high');
-await createTodo('Read documentation', 'medium');
-await updateTodo('todo-123', { completed: true });
+// Event listeners
+sendButton.addEventListener('click', sendMessage);
+messageInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') sendMessage();
+});
+
+// Initial presence update
+updatePresenceUI();
 ```
 
-### 4. React Integration
+## React Integration
 
-Use React hooks for seamless real-time updates:
+For React applications, kSync v0.2 provides simple state integration:
 
 ```tsx
-import React from 'react';
-import { KSyncProvider, useKSyncLiveQuery, useKSync } from '@klastra/ksync/react';
+import React, { useState, useEffect } from 'react';
+import { createChat } from '@klastra/ksync';
 
-function TodoApp() {
-  return (
-    <KSyncProvider instance={ksync}>
-      <TodoList />
-      <AddTodoForm />
-    </KSyncProvider>
-  );
-}
+function ChatApp() {
+  const [chat] = useState(() => createChat('my-room'));
+  const [messages, setMessages] = useState([]);
+  const [presence, setPresence] = useState([]);
 
-function TodoList() {
-  // Live query that automatically updates
-  const { data: todos, loading } = useKSyncLiveQuery(
-    async () => {
-      return await todoApp.todos.findMany({
-        where: { completed: false },
-        orderBy: { priority: 'desc', createdAt: 'desc' }
-      });
-    },
-    [] // Dependencies
-  );
-
-  if (loading) return <div>Loading todos...</div>;
-
-  return (
-    <ul>
-      {todos.map(todo => (
-        <TodoItem key={todo.id} todo={todo} />
-      ))}
-    </ul>
-  );
-}
-
-function TodoItem({ todo }) {
-  const ksync = useKSync();
-  
-  const toggleComplete = async () => {
-    await ksync.send('todo-updated', {
-      id: todo.id,
-      completed: !todo.completed,
-      updatedAt: Date.now()
-    });
-  };
-
-  return (
-    <li onClick={toggleComplete} style={{ 
-      textDecoration: todo.completed ? 'line-through' : 'none',
-      color: todo.priority === 'high' ? 'red' : 'black'
-    }}>
-      {todo.title}
-    </li>
-  );
-}
-
-function AddTodoForm() {
-  const ksync = useKSync();
-  const [title, setTitle] = React.useState('');
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    await ksync.send('todo-created', {
-      id: `todo-${Date.now()}`,
-      title,
-      completed: false,
-      priority: 'medium',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      userId: 'user-123'
+  useEffect(() => {
+    // Listen for messages
+    chat.on('message', (data) => {
+      setMessages(prev => [...prev, data]);
     });
 
-    setTitle('');
-  };
+    // Listen for presence
+    chat.on('presence-update', () => {
+      setPresence(chat.getPresence());
+    });
 
-  return (
-    <form onSubmit={handleSubmit}>
-      <input 
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Add a todo..."
-      />
-      <button type="submit">Add</button>
-    </form>
-  );
-}
-```
+    // Set initial presence
+    chat.setPresence({
+      status: 'online',
+      metadata: { name: 'React User' }
+    });
 
-## Choose Your Sync Mode
-
-kSync supports two powerful synchronization modes:
-
-### Real-Time WebSocket Sync
-
-Perfect for live collaboration and real-time updates:
-
-```typescript
-// Create with WebSocket sync
-const realtimeSync = ksync.create({
-  syncUrl: 'ws://localhost:3001',
-  mode: 'websocket'
-});
-
-// Events sync automatically in real-time
-await realtimeSync.send('todo-created', { /* todo data */ });
-// ↑ This instantly syncs to all connected clients
-```
-
-### Git-Like Sync (Offline-First)
-
-Perfect for offline-first apps with manual/scheduled sync:
-
-```typescript
-// Create with Git-like sync
-const offlineSync = ksync.createGitSync({
-  serverUrl: 'https://api.myapp.com/sync',
-  auth: { token: 'your-auth-token' }
-});
-
-// Work offline
-await offlineSync.send('todo-created', { /* todo data */ });
-await offlineSync.send('todo-updated', { /* updates */ });
-
-// Sync when ready (manual)
-await offlineSync.sync(); // Pull + Push
-
-// Or just pull/push separately
-await offlineSync.pull(); // Download changes
-await offlineSync.push(); // Upload changes
-
-// Or enable periodic sync
-offlineSync.startPeriodicSync({ interval: 60000 }); // Every minute
-```
-
-## Advanced Features
-
-### CRDT for Conflict-Free Collaboration
-
-Enable true collaborative editing without conflicts:
-
-```typescript
-// Create CRDT-enabled instance
-const crdtSync = ksync.createCRDT({
-  nodeId: 'user-alice',
-  mode: 'event-sourcing'
-});
-
-// Create collaborative data structures
-const documentTitle = crdtSync.createLWWRegister('doc-title', 'Untitled');
-const documentTags = crdtSync.createGSet('doc-tags');
-const viewCount = crdtSync.createGCounter('doc-views');
-
-// Multiple users can edit simultaneously without conflicts
-await documentTitle.set('My Amazing Document');
-await documentTags.add('important');
-await viewCount.increment();
-```
-
-### Multi-Store Architecture
-
-Organize complex apps with multiple isolated stores:
-
-```typescript
-// Create multi-store manager
-const multistore = ksync.createMultistore();
-
-// Create separate stores for different domains
-const userStore = await multistore.createStore('users', {
-  schema: { user: UserSchema }
-});
-
-const projectStore = await multistore.createStore('projects', {
-  schema: { project: ProjectSchema }
-});
-
-// Cross-store operations
-await multistore.broadcast('user-status-changed', {
-  userId: 'user-123',
-  status: 'online'
-});
-
-// Derived stores
-const activityStore = await multistore.createDerivedStore('activity', {
-  sources: ['users', 'projects'],
-  derive: (stores) => {
-    // Combine data from multiple stores
-    return computeUserActivity(stores.users, stores.projects);
-  }
-});
-```
-
-## Complete Example
-
-Here's a complete todo app showcasing kSync's new features:
-
-```typescript
-import { z } from 'zod';
-import { ksync } from '@klastra/ksync';
-
-// Schema
-const TodoSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  completed: z.boolean(),
-  priority: z.enum(['low', 'medium', 'high']),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-  userId: z.string()
-});
-
-// Create kSync with database-like queries
-const todoApp = ksync.createDrizzleAdapter({
-  schema: { todos: TodoSchema },
-  syncUrl: 'ws://localhost:3001'
-});
-
-// Define events
-ksync.defineSchema('todo-created', TodoSchema);
-ksync.defineSchema('todo-updated', TodoSchema.partial().extend({ id: z.string() }));
-ksync.defineSchema('todo-deleted', z.object({ id: z.string() }));
-
-// Todo service
-class TodoService {
-  // Create todo
-  async createTodo(title: string, priority = 'medium') {
-    const todo = {
-      id: `todo-${Date.now()}`,
-      title,
-      completed: false,
-      priority,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      userId: 'user-123'
+    return () => {
+      chat.disconnect();
     };
-    
-    await ksync.send('todo-created', todo);
-    return todo;
+  }, [chat]);
+
+  const sendMessage = async (text: string) => {
+    await chat.send('message', {
+      text,
+      author: 'React User',
+      timestamp: Date.now(),
+      id: `msg-${Date.now()}`
+    });
+  };
+
+  return (
+    <div>
+      <div>
+        <h3>Online ({presence.length})</h3>
+        {presence.map(p => (
+          <div key={p.userId}>{p.metadata?.name || p.userId}</div>
+        ))}
+      </div>
+      
+      <div>
+        <h3>Messages</h3>
+        {messages.map(msg => (
+          <div key={msg.id}>
+            <strong>{msg.author}</strong>: {msg.text}
+          </div>
+        ))}
+      </div>
+      
+      <input 
+        onKeyPress={e => e.key === 'Enter' && sendMessage(e.target.value)}
+        placeholder="Type a message..."
+      />
+    </div>
+  );
+}
+```
+
+## AI Streaming Example
+
+Build a real-time AI chat with streaming responses:
+
+```typescript
+import { createAI } from '@klastra/ksync';
+
+const ai = createAI('gpt-assistant', {
+  features: { streaming: true }
+});
+
+// Simple streaming chat interface
+class AIChat {
+  private currentResponse = '';
+  private responseElement: HTMLElement;
+
+  constructor(responseElementId: string) {
+    this.responseElement = document.getElementById(responseElementId);
+    this.setupListeners();
   }
-  
-  // Get active todos
-  async getActiveTodos() {
-    return await todoApp.todos.findMany({
-      where: { completed: false },
-      orderBy: { priority: 'desc', createdAt: 'desc' }
+
+  private setupListeners() {
+    // Listen for streaming chunks
+    ai.on('stream-chunk', (data) => {
+      this.currentResponse += data.data;
+      this.responseElement.textContent = this.currentResponse;
+    });
+
+    // Response complete
+    ai.on('stream-end', (data) => {
+      console.log('AI response complete');
+      // Save to message history, etc.
     });
   }
-  
-  // Toggle completion
-  async toggleTodo(id: string) {
-    const todo = await todoApp.todos.findById(id);
-    if (todo) {
-      await ksync.send('todo-updated', {
-        id,
-        completed: !todo.completed,
-        updatedAt: Date.now()
-      });
+
+  async askQuestion(question: string) {
+    // Clear previous response
+    this.currentResponse = '';
+    this.responseElement.textContent = 'AI is thinking...';
+
+    // Simulate AI response stream
+    const responseId = `response-${Date.now()}`;
+    await ai.startStream(responseId);
+
+    // Simulate streaming response (replace with real AI API)
+    const words = [
+      'I understand your question. ',
+      'Let me think about this carefully. ',
+      'Based on my knowledge, ',
+      'I would recommend the following approach...'
+    ];
+
+    for (const word of words) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await ai.streamChunk(responseId, { data: word });
     }
-  }
-  
-  // Get statistics
-  async getStats() {
-    const [total, completed, high] = await Promise.all([
-      todoApp.todos.count(),
-      todoApp.todos.count({ where: { completed: true } }),
-      todoApp.todos.count({ where: { priority: 'high' } })
-    ]);
-    
-    return { total, completed, pending: total - completed, high };
+
+    await ai.endStream(responseId);
   }
 }
 
 // Usage
-const todoService = new TodoService();
+const chat = new AIChat('ai-response');
+document.getElementById('ask-button').onclick = () => {
+  const question = document.getElementById('question-input').value;
+  chat.askQuestion(question);
+};
+```
 
-// Create some todos
-await todoService.createTodo('Buy groceries', 'high');
-await todoService.createTodo('Read documentation', 'medium');
+## Advanced Configuration
 
-// Query todos
-const activeTodos = await todoService.getActiveTodos();
-console.log('Active todos:', activeTodos);
+For production applications, you can customize kSync extensively:
 
-// Get stats
-const stats = await todoService.getStats();
-console.log('Stats:', stats);
+```typescript
+import { createKSync } from '@klastra/ksync';
+
+const ksync = createKSync({
+  // Connection
+  serverUrl: 'wss://your-server.com/ws',
+  room: 'my-app',
+  userId: 'user-123',
+
+  // Authentication
+  auth: {
+    token: 'your-jwt-token',
+    type: 'bearer'
+  },
+
+  // Performance tuning
+  performance: {
+    batchSize: 200,         // Higher for throughput
+    batchDelay: 5,          // Lower for real-time
+    materializationCaching: true,
+    compressionThreshold: 1024
+  },
+
+  // Offline support
+  offline: {
+    enabled: true,
+    queueSize: 10000,
+    persistence: true,
+    syncOnReconnect: true
+  },
+
+  // Features
+  features: {
+    presence: true,
+    streaming: true,
+    encryption: false
+  },
+
+  // Production debugging
+  debug: {
+    events: false,      // Disable in production
+    performance: true   // Monitor performance
+  }
+});
 ```
 
 ## Next Steps
 
 <CardGroup cols={2}>
   <Card
-    title="CRDT Integration"
-    icon="arrows-rotate"
-    href="/concepts/crdt"
+    title="Performance Benchmarks"
+    icon="chart-line"
+    href="/benchmarks"
   >
-    Learn about conflict-free collaborative editing with CRDTs
-  </Card>
-  <Card
-    title="Drizzle Integration"
-    icon="database"
-    href="/concepts/drizzle-integration"
-  >
-    Database-like queries for your real-time data
-  </Card>
-  <Card
-    title="Multi-Store Architecture"
-    icon="layer-group"
-    href="/concepts/multistore"
-  >
-    Organize complex apps with multiple data stores
-  </Card>
-  <Card
-    title="React Hooks"
-    icon="react"
-    href="/guides/react-hooks"
-  >
-    Reactive React integration with live data updates
-  </Card>
-  <Card
-    title="Git-Like Sync"
-    icon="git-merge"
-    href="/concepts/git-sync"
-  >
-    Offline-first apps with pull/push synchronization
+    See how kSync delivers 600k+ ops/sec performance
   </Card>
   <Card
     title="API Reference"
-    icon="code"
-    href="/api-reference/ksync-class"
+    icon="book"
+    href="/api-reference/core"
   >
-    Explore the complete API documentation
+    Explore all available methods and configuration options
+  </Card>
+  <Card
+    title="Factory Functions Guide"
+    icon="magic-wand"
+    href="/guides/factory-functions"
+  >
+    Learn about optimized presets for different use cases
+  </Card>
+  <Card
+    title="Production Deployment"
+    icon="rocket"
+    href="/guides/production"
+  >
+    Deploy kSync for enterprise-scale applications
   </Card>
 </CardGroup>
 
-## Key Features You Just Learned
+---
 
-<AccordionGroup>
-  <Accordion title="🗄️ Database-Like Queries" icon="database">
-    ```typescript
-    // SQL-like syntax for real-time data
-    const todos = await todoApp.todos.findMany({
-      where: { completed: false, priority: 'high' },
-      orderBy: { createdAt: 'desc' },
-      limit: 10
-    });
-    ```
-  </Accordion>
-
-  <Accordion title="⚛️ React Integration" icon="react">
-    ```typescript
-    // Live queries that auto-update React components
-    const { data: todos, loading } = useKSyncLiveQuery(
-      async () => await todoApp.todos.findMany(),
-      []
-    );
-    ```
-  </Accordion>
-
-  <Accordion title="🔀 CRDT Collaboration" icon="arrows-rotate">
-    ```typescript
-    // True conflict-free collaborative editing
-    const doc = crdt.createLWWRegister('title', 'My Doc');
-    await doc.set('Updated Title'); // No conflicts ever!
-    ```
-  </Accordion>
-
-  <Accordion title="📡 Dual Sync Modes" icon="arrows-spin">
-    ```typescript
-    // Real-time WebSocket OR Git-like pull/push
-    await gitSync.pull(); // Download changes
-    await gitSync.push(); // Upload changes
-    // Perfect for offline-first apps
-    ```
-  </Accordion>
-</AccordionGroup>
-
-🎉 **You're ready to build amazing real-time applications with kSync!** The combination of database-like queries, conflict-free sync, and React integration makes building collaborative apps incredibly simple. 
+**You now have a real-time sync engine running in under 2 minutes!** kSync v0.2's smart defaults mean you can focus on building features, not configuring infrastructure. 

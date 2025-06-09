@@ -1,7 +1,7 @@
 {
   "name": "@klastra/ksync",
-  "version": "0.1.1",
-  "description": "Schema-driven, Bun-native, real-time sync engine for local-first apps",
+  "version": "0.2.0",
+  "description": "Enterprise-grade, real-time sync engine for modern applications with 300k+ ops/sec performance",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "dist/index.js",
@@ -23,8 +23,16 @@
     "build:types": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
+    "test": "node src/__tests__/ksync.basic.test.js",
+    "test:all": "bun run src/__tests__/ksync.basic.test.ts",
+    "benchmark": "bun run scripts/benchmark.ts",
+    "benchmark:extended": "bun run scripts/extended-benchmark.ts",
+    "benchmark:quick": "bun run scripts/quick-scale-test.ts",
+    "benchmark:final": "bun run scripts/final-benchmark.ts",
     "example:basic": "bun run examples/basic.ts",
     "example:sync": "bun run examples/sync.ts",
+    "example:advanced": "bun run examples/advanced-features.ts",
+    "example:streaming": "bun run examples/streaming.ts",
     "server": "bun run server/websocket-server.ts",
     "prepublishOnly": "npm run clean && npm run build",
     "prepack": "npm run build"
@@ -39,7 +47,13 @@
     "typescript",
     "bun",
     "indexeddb",
-    "collaboration"
+    "collaboration",
+    "enterprise",
+    "performance",
+    "presence",
+    "streaming",
+    "300k-ops",
+    "scalable"
   ],
   "author": "Klastra Labs",
   "license": "MIT",
@@ -52,12 +66,14 @@
     "url": "https://github.com/klastra-ai/ksync/issues"
   },
   "dependencies": {
-    "zod": "^3.22.4",
-    "ws": "^8.14.2"
+    "ws": "^8.14.2",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.14",
     "@types/ws": "^8.5.8",
-    "bun-types": "latest"
+    "bun-types": "latest",
+    "tsx": "^4.19.4"
   },
   "peerDependencies": {
     "drizzle-orm": "^0.29.0",
@@ -71,4 +87,4 @@
       "optional": true
     }
   }
-} 
+}

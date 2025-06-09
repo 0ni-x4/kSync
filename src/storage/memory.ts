@@ -18,6 +18,14 @@ export class MemoryStorage implements KSyncStorage {
     this.events.push(...events);
   }
 
+  async saveEvents(events: KSyncEvent[]): Promise<void> {
+    return this.storeEvents(events);
+  }
+
+  async loadEvents(): Promise<KSyncEvent[]> {
+    return [...this.events];
+  }
+
   async getLastVersion(): Promise<number> {
     if (this.events.length === 0) return 0;
     return Math.max(...this.events.map(e => e.version));
