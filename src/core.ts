@@ -608,23 +608,53 @@ export class KSync extends EventEmitter {
     }
 
     const startTime = performance.now();
-    await this.syncClient.connect();
-    const duration = performance.now() - startTime;
     
-    log(this.config.debug, 'sync', `Connected in ${duration.toFixed(2)}ms`);
-    
-    // Auto-join room
-    if (this.config.room) {
-      await this.joinRoom(this.config.room);
+    try {
+      await this.syncClient.connect();
+      const duration = performance.now() - startTime;
+      
+      log(this.config.debug, 'sync', `Connected in ${duration.toFixed(2)}ms`);
+      
+      // Auto-join room
+      if (this.config.room) {
+        await this.joinRoom(this.config.room);
+      }
+      
+      // Auto-authenticate
+      if (this.config.auth.token || this.config.auth.provider) {
+        await this.authenticate();
+      }
+      
+      // Send queued events
+      await this.sendQueuedEvents();
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      
+      // Enhanced error message with debugging info
+      let enhancedMessage = `Connection failed after ${duration.toFixed(2)}ms`;
+      
+      if (error instanceof KSyncError) {
+        enhancedMessage = error.message;
+      } else if (error instanceof Error) {
+        enhancedMessage += `: ${error.message}`;
+      }
+      
+      // Add debugging hints in debug mode
+      if (this.config.debug.sync) {
+        enhancedMessage += `\n\n🔧 Debug Information:` +
+                          `\n• Server URL: ${this.config.serverUrl}` +
+                          `\n• Room: ${this.config.room || 'none'}` +
+                          `\n• Sync enabled: ${this.config.sync.enabled}` +
+                          `\n• Connection timeout: ${options?.timeout || 'default'}ms` +
+                          `\n\n💡 Troubleshooting:` +
+                          `\n• Ensure server is running and accessible` +
+                          `\n• Check if URL starts with ws:// or wss://` +
+                          `\n• Verify server port and firewall settings` +
+                          `\n• Check browser console for CORS errors`;
+      }
+      
+      throw new KSyncError(enhancedMessage, 'CONNECTION_FAILED');
     }
-    
-    // Auto-authenticate
-    if (this.config.auth.token || this.config.auth.provider) {
-      await this.authenticate();
-    }
-    
-    // Send queued events
-    await this.sendQueuedEvents();
   }
 
   /**

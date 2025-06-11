@@ -15,7 +15,7 @@ export { WebSocketSyncClient } from './sync/websocket-client.js';
 // export * from './react/index.js';
 
 // Utilities
-export { generateId } from './utils.js';
+export { generateId, testConnection, diagnoseConnection } from './utils.js';
 
 // New feature exports - TODO: Fix import issues
 // export * from './crdt/index.js';

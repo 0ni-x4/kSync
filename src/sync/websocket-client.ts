@@ -160,8 +160,10 @@ export class WebSocketSyncClient implements KSyncSync {
           clearTimeout(connectionTimeout)
           this.isConnecting = false
           
-          // Better error logging - works in both browser and Node.js
+          // Better error logging with debugging hints - works in both browser and Node.js
           let errorMessage: string;
+          let debugHint: string = '';
+          
           if (typeof ErrorEvent !== 'undefined' && error instanceof ErrorEvent) {
             errorMessage = `${error.type}: ${error.message || 'WebSocket connection failed'}`;
           } else if (error && typeof error === 'object' && 'type' in error) {
@@ -170,16 +172,30 @@ export class WebSocketSyncClient implements KSyncSync {
             errorMessage = `WebSocket error: Connection failed`;
           }
           
+          // Add helpful debugging information
+          debugHint = `\n🔍 Connection failed to: ${this.serverUrl}\n` +
+                     `💡 Common fixes:\n` +
+                     `   • Check if server is running\n` +
+                     `   • Verify WebSocket URL (ws:// or wss://)\n` +
+                     `   • Check server port and availability\n` +
+                     `   • Ensure CORS is configured if needed`;
+          
+          const fullMessage = errorMessage + (this.debug ? debugHint : '');
+          
           // Only log if not suppressing expected errors or if debug is enabled
           if (!this.suppressExpectedErrors || this.debug) {
-            this.log(errorMessage)
+            this.log(fullMessage)
           }
           
           this.handleConnectionFailure()
           
-          // Always reject on the first connection attempt error
+          // Always reject on the first connection attempt error with helpful info
           if (this.reconnectAttempts === 0) {
-            reject(new KSyncError('Failed to connect', 'CONNECTION_ERROR'))
+            const errorObj = new KSyncError(
+              `Failed to connect to ${this.serverUrl}. ${this.debug ? debugHint : 'Enable debug mode for more details.'}`, 
+              'CONNECTION_ERROR'
+            );
+            reject(errorObj)
           }
         }
       } catch (error) {
