@@ -1,39 +1,174 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo, createContext, useContext, ReactNode } from 'react';
-import { KSync } from '../core';
-import { KSyncEvent, EventListener } from '../types';
-import { DrizzleKSyncAdapter, QueryResult, WhereClause, OrderClause } from '../drizzle';
-import { KSyncMultistore } from '../multistore';
+import { KSync } from '../core.js';
+import { KSyncEvent, EventListener } from '../types.js';
+// TODO: Fix these imports after fixing the modules
+// import { DrizzleKSyncAdapter, QueryResult, WhereClause, OrderClause } from '../drizzle/index.js';
+// import { KSyncMultistore } from '../multistore/index.js';
 
-// Hook for basic kSync instance
-export function useKSync(ksync: KSync) {
+// Context for provider pattern
+const KSyncContext = createContext<KSync | null>(null);
+
+// Hook for easy one-line sync setup
+export function useKSync(config?: {
+  room?: string;
+  serverUrl?: string;
+  userId?: string;
+  debug?: boolean;
+}): {
+  ksync: KSync;
+  send: (type: string, data: any) => Promise<void>;
+  state: any;
+  isConnected: boolean;
+  isOnline: boolean;
+} {
+  // Create stable config reference
+  const stableConfig = useMemo(() => ({
+    room: config?.room || 'default',
+    serverUrl: config?.serverUrl || 'ws://localhost:8080/ws',
+    userId: config?.userId || `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    debug: config?.debug || false,
+    sync: {
+      enabled: true,
+      mode: 'realtime' as const,
+      options: {
+        autoReconnect: true,
+        maxReconnectAttempts: 10,
+        reconnectDelay: 1000,
+      }
+    },
+    storage: {
+      type: 'memory' as const,
+      options: {
+        persistEvents: false, // Disable for simplicity in dev
+        maxEvents: 1000,
+      }
+    },
+    offline: {
+      enabled: true,
+      syncOnReconnect: true,
+    },
+    state: {
+      autoMaterialize: true,
+      materializer: (events: KSyncEvent[]) => {
+        // Simple state materialization - merge all events by type
+        const state: any = {};
+        events.forEach(event => {
+          if (!state[event.type]) {
+            state[event.type] = [];
+          }
+          state[event.type].push(event.data);
+        });
+        return state;
+      }
+    }
+  }), [config?.room, config?.serverUrl, config?.userId, config?.debug]);
+
+  // Create KSync instance with stable config
+  const ksync = useMemo(() => {
+    return new KSync(stableConfig);
+  }, [stableConfig]);
+
+  // State management
   const [isConnected, setIsConnected] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [state, setState] = useState<any>({});
+  const [isOnline, setIsOnline] = useState(true);
 
+  // Initialize and connect
   useEffect(() => {
+    let mounted = true;
+
     const initializeKSync = async () => {
-      if (!isInitialized) {
+      try {
         await ksync.initialize();
-        setIsInitialized(true);
-        setIsConnected(true);
+        
+        // Auto-connect if serverUrl provided
+        if (stableConfig.serverUrl) {
+          await ksync.connect();
+        }
+
+        if (mounted) {
+          setIsConnected(ksync.getStatus().connected);
+          setState(ksync.getState());
+        }
+      } catch (error) {
+        console.error('kSync initialization failed:', error);
       }
     };
 
+    // Connection event handlers
+    const handleConnect = () => {
+      if (mounted) {
+        setIsConnected(true);
+        setIsOnline(true);
+      }
+    };
+
+    const handleDisconnect = () => {
+      if (mounted) {
+        setIsConnected(false);
+      }
+    };
+
+    const handleEvent = () => {
+      if (mounted) {
+        setState(ksync.getState());
+      }
+    };
+
+    const handleOnline = () => {
+      if (mounted) {
+        setIsOnline(true);
+      }
+    };
+
+    const handleOffline = () => {
+      if (mounted) {
+        setIsOnline(false);
+      }
+    };
+
+    // Setup event listeners
+    ksync.on('connected', handleConnect);
+    ksync.on('disconnected', handleDisconnect);
+    ksync.on('event', handleEvent);
+    ksync.on('online', handleOnline);
+    ksync.on('offline', handleOffline);
+
+    // Initialize
     initializeKSync();
 
-    // Cleanup on unmount
+    // Cleanup
     return () => {
+      mounted = false;
+      ksync.off('connected', handleConnect);
+      ksync.off('disconnected', handleDisconnect);
+      ksync.off('event', handleEvent);
+      ksync.off('online', handleOnline);
+      ksync.off('offline', handleOffline);
       ksync.close();
     };
-  }, [ksync, isInitialized]);
+  }, [ksync, stableConfig.serverUrl]);
+
+  // Send function
+  const send = useCallback(async (type: string, data: any) => {
+    try {
+      await ksync.send(type, data);
+    } catch (error) {
+      console.error('Failed to send event:', error);
+      throw error;
+    }
+  }, [ksync]);
 
   return {
     ksync,
+    send,
+    state,
     isConnected,
-    isInitialized
+    isOnline,
   };
 }
 
-// Hook for listening to events
+// Hook for listening to specific events
 export function useKSyncEvent<T = any>(
   ksync: KSync,
   eventType: string,
@@ -62,7 +197,7 @@ export function useKSyncEvent<T = any>(
   return events;
 }
 
-// Hook for sending events
+// Hook for sending events with loading state
 export function useKSyncSend(ksync: KSync) {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -91,33 +226,33 @@ export function useKSyncSend(ksync: KSync) {
 // Hook for materialized state
 export function useKSyncState<T = any>(
   ksync: KSync,
-  materializerName: string,
+  materializerName?: string,
   dependencies: any[] = []
 ): T | undefined {
   const [state, setState] = useState<T | undefined>();
 
   useEffect(() => {
-    const updateState = () => {
+    // Listen for any event that might change state
+    const listener = () => {
       const newState = ksync.getState();
       setState(newState);
     };
 
-    // Listen for any event that might change state
-    const listener = () => updateState();
-    ksync.on('*', listener);
+    ksync.on('event', listener);
 
     // Get initial state
-    updateState();
+    setState(ksync.getState());
 
     return () => {
-      ksync.off('*', listener);
+      ksync.off('event', listener);
     };
   }, [ksync, materializerName, ...dependencies]);
 
   return state;
 }
 
-// Hook for Drizzle queries
+// Hook for Drizzle queries - TODO: Re-enable when Drizzle module is fixed
+/*
 export function useKSyncQuery<T = any>(
   adapter: DrizzleKSyncAdapter,
   tableName: string,
@@ -166,8 +301,10 @@ export function useKSyncQuery<T = any>(
     refetch
   };
 }
+*/
 
-// Hook for real-time Drizzle queries with auto-refresh
+// Hook for real-time Drizzle queries with auto-refresh - TODO: Re-enable when Drizzle module is fixed
+/*
 export function useKSyncLiveQuery<T = any>(
   ksync: KSync,
   adapter: DrizzleKSyncAdapter,
@@ -210,17 +347,19 @@ export function useKSyncLiveQuery<T = any>(
     refetch
   };
 }
+*/
 
-// Hook for multistore
+// Multistore hook - TODO: Re-enable when Multistore module is fixed
+/*
 export function useMultistore(multistore: KSyncMultistore) {
   const [isInitialized, setIsInitialized] = useState(false);
-  const [storeNames, setStoreNames] = useState<string[]>([]);
 
   useEffect(() => {
     const initialize = async () => {
-      await multistore.initialize();
-      setIsInitialized(true);
-      setStoreNames(multistore.getStoreNames());
+      if (!isInitialized) {
+        await multistore.initialize();
+        setIsInitialized(true);
+      }
     };
 
     initialize();
@@ -228,24 +367,14 @@ export function useMultistore(multistore: KSyncMultistore) {
     return () => {
       multistore.close();
     };
-  }, [multistore]);
-
-  const getStore = useCallback((name: string) => {
-    return multistore.getStore(name);
-  }, [multistore]);
-
-  const getDrizzle = useCallback((name: string) => {
-    return multistore.getDrizzle(name);
-  }, [multistore]);
+  }, [multistore, isInitialized]);
 
   return {
-    isInitialized,
-    storeNames,
-    getStore,
-    getDrizzle,
-    multistore
+    multistore,
+    isInitialized
   };
 }
+*/
 
 // Hook for presence awareness
 export function useKSyncPresence(ksync: KSync, initialData?: Record<string, any>) {
@@ -392,8 +521,71 @@ export function useKSyncOptimistic<T>(
   };
 }
 
-// Context provider for kSync
-const KSyncContext = createContext<KSync | null>(null);
+// Hook for connection status
+export function useKSyncConnection(ksync: KSync) {
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    const handleConnect = () => {
+      setIsConnected(true);
+      setIsConnecting(false);
+      setError(null);
+    };
+
+    const handleDisconnect = () => {
+      setIsConnected(false);
+      setIsConnecting(false);
+    };
+
+    const handleError = (error: Error) => {
+      setError(error);
+      setIsConnecting(false);
+    };
+
+    ksync.on('connected', handleConnect);
+    ksync.on('disconnected', handleDisconnect);
+    ksync.on('error', handleError);
+
+    // Check initial connection status
+    const status = ksync.getStatus();
+    setIsConnected(status.connected);
+
+    return () => {
+      ksync.off('connected', handleConnect);
+      ksync.off('disconnected', handleDisconnect);
+      ksync.off('error', handleError);
+    };
+  }, [ksync]);
+
+  const connect = useCallback(async () => {
+    setIsConnecting(true);
+    setError(null);
+    try {
+      await ksync.connect();
+    } catch (err) {
+      setError(err as Error);
+      setIsConnecting(false);
+    }
+  }, [ksync]);
+
+  const disconnect = useCallback(async () => {
+    try {
+      await ksync.disconnect();
+    } catch (err) {
+      setError(err as Error);
+    }
+  }, [ksync]);
+
+  return {
+    isConnected,
+    isConnecting,
+    error,
+    connect,
+    disconnect
+  };
+}
 
 export function KSyncProvider({ ksync, children }: { ksync: KSync; children: ReactNode }) {
   return React.createElement(KSyncContext.Provider, { value: ksync }, children);

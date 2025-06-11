@@ -287,12 +287,25 @@ export class KSyncServer extends EventEmitter {
       });
     }
 
-    // Notify others
-    this.broadcast(room, {
-      type: 'user-joined',
-      clientId: client.id,
-      userId: client.userId
-    });
+    // Notify other clients (not the joining client themselves)
+    const roomClients = this.rooms.get(room);
+    if (roomClients) {
+      const joinMessage = {
+        type: 'user-joined',
+        clientId: client.id,
+        userId: client.userId,
+        timestamp: Date.now()
+      };
+
+      roomClients.forEach(clientId => {
+        if (clientId !== client.id) {
+          const targetClient = this.clients.get(clientId);
+          if (targetClient?.ws.readyState === WebSocket.OPEN) {
+            targetClient.ws.send(JSON.stringify(joinMessage));
+          }
+        }
+      });
+    }
 
     this.log(`Client ${client.id} joined room: ${room}`);
     this.emit('client-joined-room', client, room);
@@ -319,8 +332,38 @@ export class KSyncServer extends EventEmitter {
       }
     };
 
-    // Broadcast to room (including sender for confirmation)
-    this.broadcast(room, eventData);
+    // **FIX: Store event in server memory**
+    if (!this.events.has(room)) {
+      this.events.set(room, []);
+    }
+    this.events.get(room)!.push(eventData);
+    
+    // Keep only last 1000 events per room to prevent memory bloat
+    const roomEvents = this.events.get(room)!;
+    if (roomEvents.length > 1000) {
+      roomEvents.splice(0, roomEvents.length - 1000);
+    }
+
+    // Broadcast to other clients in room (excluding sender to prevent duplication)
+    const roomClients = this.rooms.get(room);
+    if (!roomClients) return;
+
+    const messageToSend = {
+      type: 'event',
+      room,
+      data: eventData,
+      timestamp: Date.now()
+    };
+
+    roomClients.forEach(clientId => {
+      // Skip the sender to prevent event duplication
+      if (clientId !== client.id) {
+        const targetClient = this.clients.get(clientId);
+        if (targetClient?.ws.readyState === WebSocket.OPEN) {
+          targetClient.ws.send(JSON.stringify(messageToSend));
+        }
+      }
+    });
     
     this.emit('event', room, eventData, client);
   }

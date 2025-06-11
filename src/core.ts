@@ -7,11 +7,11 @@ import {
   StreamChunk,
   PresenceInfo,
   KSyncError
-} from './types';
-import { MemoryStorage } from './storage/memory';
-import { IndexedDBStorage } from './storage/indexeddb';
-import { WebSocketSyncClient } from './sync/websocket-client';
-import { generateId } from './utils';
+} from './types.js';
+import { MemoryStorage } from './storage/memory.js';
+import { IndexedDBStorage } from './storage/indexeddb.js';
+import { WebSocketSyncClient } from './sync/websocket-client.js';
+import { generateId } from './utils.js';
 
 // 🎯 Clear, comprehensive configuration with good defaults
 export interface KSyncConfig {
@@ -166,7 +166,7 @@ export class KSync extends EventEmitter {
   private materializedState: any = null;
   private version = 0;
   private isConnected = false;
-  private isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+  private isOnline = typeof navigator !== 'undefined' && navigator.onLine !== undefined ? navigator.onLine : true;
   private messageQueue: KSyncEvent[] = [];
   private presenceMap = new Map<string, PresenceInfo>();
   private streamStates = new Map<string, any>();
@@ -188,7 +188,7 @@ export class KSync extends EventEmitter {
     
     this.config = this.resolveConfig(config);
     this.initializeStorage();
-    this.initializeSync();
+    // Note: initializeSync is now called lazily when needed to avoid require() in constructor
     this.setupOfflineHandling();
     this.setupPerformanceMonitoring();
     
@@ -233,8 +233,12 @@ export class KSync extends EventEmitter {
     await this.addEvent(event);
     
     // Handle sync based on configuration
-    if (this.config.sync.enabled && this.syncClient) {
-      if (this.isConnected && this.isOnline) {
+    if (this.config.sync.enabled) {
+      await this.ensureSyncInitialized();
+      
+      log(this.config.debug, 'sync', `Sync check: syncClient=${!!this.syncClient}, connected=${this.isConnected}, online=${this.isOnline}`);
+      
+      if (this.syncClient && this.isConnected && this.isOnline) {
         try {
           await this.sendToServer(event);
           log(this.config.debug, 'sync', 'Event synced successfully:', event.id);
@@ -445,14 +449,15 @@ export class KSync extends EventEmitter {
       if (options?.leaveCurrentRoom && previousRoom !== room) {
         await this.syncClient.send({
           type: 'leave',
-          data: { room: previousRoom, userId: this.config.userId }
+          room: previousRoom,
+          data: { userId: this.config.userId }
         });
       }
       
       await this.syncClient.send({
         type: 'join',
+        room: room,
         data: { 
-          room, 
           userId: this.config.userId,
           syncHistory: options?.syncHistory !== false
         }
@@ -590,14 +595,10 @@ export class KSync extends EventEmitter {
       return;
     }
 
+    await this.ensureSyncInitialized();
+    
     if (!this.syncClient) {
-      this.syncClient = new WebSocketSyncClient(
-        this.config.serverUrl,
-        this.config.sync.options.maxReconnectAttempts,
-        this.config.sync.options.reconnectDelay,
-        typeof this.config.debug === 'object' ? this.config.debug.sync : this.config.debug
-      );
-      this.setupSyncHandlers();
+      throw new KSyncError('Failed to initialize sync client', 'SYNC_INIT_FAILED');
     }
 
     const startTime = performance.now();
@@ -676,77 +677,76 @@ export class KSync extends EventEmitter {
   // === PRIVATE METHODS ===
 
   private resolveConfig(config: KSyncConfig): ResolvedKSyncConfig {
-    const debugConfig = typeof config.debug === 'boolean' ? {
-      events: config.debug,
-      sync: config.debug,
-      performance: config.debug,
-      storage: config.debug
-    } : {
-      events: config.debug?.events || false,
-      sync: config.debug?.sync || false,
-      performance: config.debug?.performance || false,
-      storage: config.debug?.storage || false
-    };
-
+    const userId = config.userId || config.clientId || this.generateUserId();
+    const serverUrl = config.serverUrl || '';
+    const hasServer = Boolean(serverUrl);
+    
     return {
-      serverUrl: config.serverUrl || '',
+      serverUrl,
       room: config.room || 'default',
-      userId: config.userId || this.generateUserId(),
-      clientId: config.clientId || config.userId || this.generateUserId(),
-      
+      userId,
+      clientId: userId, // Backward compatibility
       auth: {
         token: config.auth?.token,
         provider: config.auth?.provider,
         type: config.auth?.type || 'bearer'
       },
-      
       storage: {
-        type: config.storage?.type || (typeof window !== 'undefined' ? 'indexeddb' : 'memory'),
+        type: config.storage?.type || 'memory',
         instance: config.storage?.instance,
         options: {
-          persistEvents: config.storage?.options?.persistEvents !== false,
+          persistEvents: config.storage?.options?.persistEvents ?? true,
           maxEvents: config.storage?.options?.maxEvents || 10000,
           compression: config.storage?.options?.compression || false
         }
       },
-      
       sync: {
-        enabled: config.sync?.enabled !== false && !!config.serverUrl,
-        client: config.sync?.client || undefined,
+        // Enable sync by default if serverUrl is provided
+        enabled: config.sync?.enabled ?? hasServer,
+        client: config.sync?.client,
+        // Default to realtime mode for better UX
         mode: config.sync?.mode || 'realtime',
         options: {
-          autoReconnect: config.sync?.options?.autoReconnect !== false,
-          maxReconnectAttempts: config.sync?.options?.maxReconnectAttempts || 5,
+          autoReconnect: config.sync?.options?.autoReconnect ?? true,
+          maxReconnectAttempts: config.sync?.options?.maxReconnectAttempts || 10,
           reconnectDelay: config.sync?.options?.reconnectDelay || 1000,
           heartbeatInterval: config.sync?.options?.heartbeatInterval || 30000
         }
       },
-      
       performance: {
-        batchSize: config.performance?.batchSize || 100,
-        batchDelay: config.performance?.batchDelay || 10,
-        materializationCaching: config.performance?.materializationCaching !== false,
+        batchSize: config.performance?.batchSize || 50, // Smaller batches for better responsiveness
+        batchDelay: config.performance?.batchDelay || 5, // Faster batching
+        materializationCaching: config.performance?.materializationCaching ?? true,
         compressionThreshold: config.performance?.compressionThreshold || 1024
       },
-      
       offline: {
-        enabled: config.offline?.enabled !== false,
+        enabled: config.offline?.enabled ?? true,
         queueSize: config.offline?.queueSize || 1000,
-        persistence: config.offline?.persistence !== false,
-        syncOnReconnect: config.offline?.syncOnReconnect !== false
+        persistence: config.offline?.persistence ?? true,
+        syncOnReconnect: config.offline?.syncOnReconnect ?? true
       },
-      
       state: {
-        materializer: config.state?.materializer || undefined,
-        enableCaching: config.state?.enableCaching !== false,
-        autoMaterialize: config.state?.autoMaterialize || false
+        materializer: config.state?.materializer,
+        enableCaching: config.state?.enableCaching ?? true,
+        // Enable auto-materialization by default for better UX
+        autoMaterialize: config.state?.autoMaterialize ?? true
       },
-      
-      debug: debugConfig,
-      
+      debug: typeof config.debug === 'boolean'
+        ? {
+            events: config.debug,
+            sync: config.debug,
+            performance: config.debug,
+            storage: config.debug
+          }
+        : {
+            events: config.debug?.events || false,
+            sync: config.debug?.sync || false,
+            performance: config.debug?.performance || false,
+            storage: config.debug?.storage || false
+          },
       features: {
-        presence: config.features?.presence !== false,
-        streaming: config.features?.streaming !== false,
+        presence: config.features?.presence ?? true,
+        streaming: config.features?.streaming ?? true,
         encryption: config.features?.encryption || false
       }
     };
@@ -777,20 +777,25 @@ export class KSync extends EventEmitter {
     log(this.config.debug, 'storage', `Initialized ${this.config.storage.type} storage`);
   }
 
-  private initializeSync(): void {
-    if (!this.config.sync.enabled) return;
+  private async ensureSyncInitialized(): Promise<void> {
+    if (!this.config.sync.enabled || this.syncClient) return;
 
-    if (this.config.sync.client) {
+    // Initialize WebSocket client if serverUrl is provided and no custom client
+    if (this.config.serverUrl && !this.config.sync.client) {
+      const { WebSocketSyncClient } = await import('./sync/websocket-client.js');
+      this.syncClient = new WebSocketSyncClient(
+        this.config.serverUrl,
+        this.config.sync.options.maxReconnectAttempts,
+        this.config.sync.options.reconnectDelay,
+        this.config.debug.sync
+      );
+      this.setupSyncHandlers();
+    } else if (this.config.sync.client) {
       this.syncClient = this.config.sync.client;
       this.setupSyncHandlers();
     }
     
-    // Auto-connect if serverUrl is provided and mode is realtime
-    if (this.config.serverUrl && this.config.sync.mode === 'realtime' && this.isOnline) {
-      setTimeout(() => this.connect().catch(error => {
-        log(this.config.debug, 'sync', 'Auto-connect failed:', error);
-      }), 0);
-    }
+    log(this.config.debug, 'sync', 'Sync client initialized');
   }
 
   private setupOfflineHandling(): void {
@@ -819,10 +824,13 @@ export class KSync extends EventEmitter {
   private setupPerformanceMonitoring(): void {
     if (!this.config.debug.performance) return;
 
-    // Log performance metrics every 10 seconds
+    // Log performance metrics every 60 seconds (less spam)
     setInterval(() => {
-      log(this.config.debug, 'performance', 'Metrics:', this.performanceMetrics);
-    }, 10000);
+      // Only log if there's actual activity
+      if (this.performanceMetrics.eventsProcessed > 0 || this.performanceMetrics.materializationCount > 0) {
+        log(this.config.debug, 'performance', 'Metrics:', this.performanceMetrics);
+      }
+    }, 60000);
   }
 
   private async addEvent(event: KSyncEvent): Promise<void> {
@@ -990,10 +998,21 @@ export class KSync extends EventEmitter {
       throw new KSyncError('Not connected', 'NOT_CONNECTED');
     }
     
+    if (!this.isConnected) {
+      log(this.config.debug, 'sync', 'WARNING: Sending event but not connected, queueing');
+      this.queueEvent(event);
+      return;
+    }
+    
+    log(this.config.debug, 'sync', `Sending event to server: ${event.type} in room ${this.config.room}`);
+    
     await this.syncClient.send({
       type: 'event',
+      room: this.config.room,
       data: event
     });
+    
+    log(this.config.debug, 'sync', `Event sent to server successfully: ${event.type}`);
   }
 
   private async authenticate(): Promise<void> {
@@ -1043,22 +1062,39 @@ export class KSync extends EventEmitter {
     switch (message.type) {
       case 'event':
         if (message.data) {
-          await this.addEvent(message.data);
+          // Check if this is our own event (prevent duplication)
+          const isOwnEvent = message.data._meta?.userId === this.config.userId;
+          
+          if (!isOwnEvent) {
+            await this.addEvent(message.data);
+          }
+          // Always emit the event for listening, but don't double-store our own events
+          this.emit(message.data.type, message.data.data, message.data);
         }
         break;
         
       case 'event-batch':
         if (Array.isArray(message.data)) {
           for (const event of message.data) {
-            await this.addEvent(event);
+            const isOwnEvent = event._meta?.userId === this.config.userId;
+            if (!isOwnEvent) {
+              await this.addEvent(event);
+            }
+            // Always emit for listening
+            this.emit(event.type, event.data, event);
           }
         }
         break;
         
+      case 'sync':
       case 'sync-response':
-        if (Array.isArray(message.data)) {
-          for (const event of message.data) {
-            await this.addEvent(event);
+        if (Array.isArray(message.events)) {
+          for (const event of message.events) {
+            // For sync responses, check if we already have this event
+            const existingEvent = this.events.find(e => e.id === event.id);
+            if (!existingEvent) {
+              await this.addEvent(event);
+            }
           }
         }
         break;
@@ -1128,12 +1164,32 @@ export function createKSync(config?: KSyncConfig): KSync {
 export function createChat(room: string, config?: Partial<KSyncConfig>): KSync {
   return new KSync({
     room,
+    serverUrl: config?.serverUrl || 'ws://localhost:8080/ws',
     features: {
       presence: true,
       streaming: false,
       ...config?.features
     },
-    debug: true,
+    sync: {
+      enabled: true, // Enable sync by default for better UX
+      mode: 'realtime', // Use realtime mode for chat
+      options: {
+        autoReconnect: true,
+        maxReconnectAttempts: 10, // More reconnection attempts
+        reconnectDelay: 1000, // Standard delay
+        ...config?.sync?.options
+      },
+      ...config?.sync
+    },
+    state: {
+      autoMaterialize: true,
+      materializer: (events) => {
+        const messages = events.filter(e => e.type === 'message').map(e => e.data);
+        return { messages, messageCount: messages.length };
+      },
+      ...config?.state
+    },
+    debug: config?.debug ?? false,
     ...config
   });
 }

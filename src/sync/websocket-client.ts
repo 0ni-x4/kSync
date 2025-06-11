@@ -1,4 +1,4 @@
-import { KSyncSync, WebSocketMessage, KSyncError } from '../types'
+import { KSyncSync, WebSocketMessage, KSyncError } from '../types.js'
 
 export class WebSocketSyncClient implements KSyncSync {
   private ws?: WebSocket
@@ -26,10 +26,19 @@ export class WebSocketSyncClient implements KSyncSync {
     this.isConnecting = true
     
     return new Promise((resolve, reject) => {
+      const connectionTimeout = setTimeout(() => {
+        this.isConnecting = false
+        if (this.ws) {
+          this.ws.close()
+        }
+        reject(new KSyncError('Connection timeout', 'CONNECTION_TIMEOUT'))
+      }, 3000) // 3 second timeout for faster test feedback
+
       try {
         this.ws = new WebSocket(this.serverUrl)
         
         this.ws.onopen = () => {
+          clearTimeout(connectionTimeout)
           this.isConnecting = false
           this.reconnectAttempts = 0
           this.startPing()
@@ -48,21 +57,30 @@ export class WebSocketSyncClient implements KSyncSync {
         }
 
         this.ws.onclose = () => {
+          clearTimeout(connectionTimeout)
           this.isConnecting = false
           this.stopPing()
           this.log('Disconnected from server')
           this.disconnectHandlers.forEach(handler => handler())
-          this.scheduleReconnect()
+          
+          // Only schedule reconnect if this wasn't the initial connection attempt
+          if (this.reconnectAttempts > 0) {
+            this.scheduleReconnect()
+          }
         }
 
         this.ws.onerror = (error) => {
+          clearTimeout(connectionTimeout)
           this.isConnecting = false
           this.log(`WebSocket error: ${error}`)
+          
+          // Always reject on the first connection attempt error
           if (this.reconnectAttempts === 0) {
             reject(new KSyncError('Failed to connect', 'CONNECTION_ERROR'))
           }
         }
       } catch (error) {
+        clearTimeout(connectionTimeout)
         this.isConnecting = false
         reject(new KSyncError('Failed to create WebSocket', 'CONNECTION_ERROR'))
       }

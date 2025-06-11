@@ -1,5 +1,5 @@
-import { KSyncEvent } from '../types';
-import { CRDTValue, CRDTFactory } from '../crdt';
+import { KSyncEvent } from '../types.js';
+import { CRDTValue, CRDTFactory } from '../crdt/index.js';
 
 export interface DrizzleConfig {
   storeName: string;

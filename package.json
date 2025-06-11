@@ -1,7 +1,8 @@
 {
   "name": "@klastra/ksync",
-  "version": "0.2.0",
-  "description": "Enterprise-grade, real-time sync engine for modern applications with 300k+ ops/sec performance",
+  "version": "0.2.5",
+  "description": "Real-time sync engine for modern applications with 300k+ ops/sec performance",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "dist/index.js",
@@ -10,6 +11,26 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js",
+      "require": "./dist/react/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "require": "./dist/server/index.js"
+    },
+    "./storage/*": {
+      "types": "./dist/storage/*.d.ts",
+      "import": "./dist/storage/*.js",
+      "require": "./dist/storage/*.js"
+    },
+    "./sync/*": {
+      "types": "./dist/sync/*.d.ts", 
+      "import": "./dist/sync/*.js",
+      "require": "./dist/sync/*.js"
     }
   },
   "files": [
@@ -18,13 +39,15 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node && tsc -p tsconfig.build.json",
-    "build:bun": "bun build src/index.ts --outdir dist --target node",
-    "build:types": "tsc -p tsconfig.build.json",
+    "build": "npm run clean && npm run build:types && npm run build:server",
+    "build:bun": "echo 'Using TypeScript compiler for ESM compatibility'",
+    "build:types": "tsc -p tsconfig.build.json --outDir dist",
+    "build:server": "tsc server/*.ts --outDir dist --rootDir . --declaration --module Node16 --target ES2022 --moduleResolution Node16",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "node src/__tests__/ksync.basic.test.js",
     "test:all": "bun run src/__tests__/ksync.basic.test.ts",
+    "test:package": "bun run examples/simple-test.ts",
     "benchmark": "bun run scripts/benchmark.ts",
     "benchmark:extended": "bun run scripts/extended-benchmark.ts",
     "benchmark:quick": "bun run scripts/quick-scale-test.ts",
@@ -33,8 +56,10 @@
     "example:sync": "bun run examples/sync.ts",
     "example:advanced": "bun run examples/advanced-features.ts",
     "example:streaming": "bun run examples/streaming.ts",
+    "example:working": "bun run examples/working-chat-example.ts",
     "server": "bun run server/websocket-server.ts",
-    "prepublishOnly": "npm run clean && npm run build",
+    "dev": "bun run scripts/dev-server.ts",
+    "prepublishOnly": "npm run clean && npm run build && npm run test:package",
     "prepack": "npm run build"
   },
   "keywords": [

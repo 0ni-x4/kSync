@@ -49,6 +49,10 @@ export type WSMessageType =
 export interface WebSocketMessage {
   type: string;
   data?: any;
+  events?: any[];  // For sync messages
+  room?: string;
+  messageId?: string;
+  timestamp?: number;
 }
 
 // Presence system for efficient state tracking

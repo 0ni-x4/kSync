@@ -1,4 +1,4 @@
-import type { KSyncEvent, KSyncStorage } from '../types';
+import type { KSyncEvent, KSyncStorage } from '../types.js';
 
 export class IndexedDBStorage implements KSyncStorage {
   private dbName = 'ksync-db';

@@ -1,44 +1,29 @@
 // Core exports (new easy-to-use API)
-export { KSync, createKSync, createChat, createTodos, createGame, createAI, KSyncConfig } from './core';
-export * from './types';
+export { KSync, createKSync, createChat, createTodos, createGame, createAI, KSyncConfig } from './core.js';
+export * from './types.js';
+
+// Server-side API exports are in separate ./server export
 
 // Storage implementations
-export { MemoryStorage } from './storage/memory';
-export { IndexedDBStorage } from './storage/indexeddb';
+export { MemoryStorage } from './storage/memory.js';
+export { IndexedDBStorage } from './storage/indexeddb.js';
 
 // Sync implementations
-export { WebSocketSyncClient } from './sync/websocket-client';
+export { WebSocketSyncClient } from './sync/websocket-client.js';
+
+// React hooks exports (CRITICAL FIX)
+export * from './react/index.js';
 
 // Utilities
-export { generateId } from './utils';
+export { generateId } from './utils.js';
 
-// New feature exports
-export * from './crdt';
-export * from './drizzle';
+// New feature exports - TODO: Fix import issues
+// export * from './crdt/index.js';
+// export * from './drizzle/index.js';
 // TODO: Fix these modules to work with new API
 // export * from './multistore';
 // export * from './sync/git-sync';
-// export * from './react';
 // export * from './simple';
 
-// Legacy factory (deprecated - use new createKSync from core)
-export function legacyCreateKSync(config: import('./types').KSyncConfig = {}) {
-  const { KSync } = require('./core');
-  return new KSync(config);
-}
-
-// TODO: Enable these when modules are fixed
-// // Factory for multistore
-// export function createMultistore(config: import('./multistore').MultistoreConfig) {
-//   const { createMultistore } = require('./multistore');
-//   return createMultistore(config);
-// }
-
-// // Factory for git sync
-// export function createGitSync(config: import('./sync/git-sync').GitSyncConfig, clientId: string) {
-//   const { createGitSync } = require('./sync/git-sync');
-//   return createGitSync(config, clientId);
-// }
-
-// Default instance for simple usage
-export const ksync = legacyCreateKSync(); 
+// Legacy exports (use createKSync from core instead)
+// export const ksync = createKSync(); // Available via main exports 

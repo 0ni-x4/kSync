@@ -1,4 +1,4 @@
-import type { KSyncEvent, KSyncStorage } from '../types';
+import type { KSyncEvent, KSyncStorage } from '../types.js';
 
 export class MemoryStorage implements KSyncStorage {
   private events: KSyncEvent[] = [];

@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import type { KSyncEvent } from '../src/types';
+import type { KSyncEvent } from '../src/types.js';
 
 interface WebSocketMessage {
   type: 'event' | 'sync-request' | 'sync-response' | 'ping' | 'pong';
@@ -182,8 +182,8 @@ export class KSyncServer {
   }
 }
 
-// CLI usage
-if (require.main === module) {
+// CLI usage (ESM compatible)
+if (import.meta.url === `file://${process.argv[1]}`) {
   const port = parseInt(process.env.PORT || '8080');
   const server = new KSyncServer(port);
 
