@@ -7,6 +7,7 @@ export interface SimpleKSyncConfig {
   room?: string;
   offlineStorage?: boolean;
   debug?: boolean;
+  suppressExpectedErrors?: boolean;
 }
 
 export interface SimpleMessage {
@@ -48,6 +49,7 @@ export class SimpleKSync {
       room: 'default',
       offlineStorage: true,
       debug: false,
+      suppressExpectedErrors: false,
       ...config
     };
 
@@ -65,7 +67,11 @@ export class SimpleKSync {
         } else {
           errorMessage = `Auto-connect failed: ${error}`;
         }
-        this.log('❌', errorMessage);
+        
+        // Only log if not suppressing expected errors or if debug is enabled
+        if (!this.config.suppressExpectedErrors || this.config.debug) {
+          this.log('❌', errorMessage);
+        }
         // Don't throw here - let the user handle connection manually if needed
       });
     }
@@ -235,7 +241,11 @@ export class SimpleKSync {
           } else {
             errorMessage = `WebSocket error: Connection failed`;
           }
-          this.log('❌', errorMessage);
+          
+          // Only log if not suppressing expected errors or if debug is enabled
+          if (!this.config.suppressExpectedErrors || this.config.debug) {
+            this.log('❌', errorMessage);
+          }
           
           if (!this.isConnected) {
             reject(error);

@@ -60,7 +60,8 @@ export class WebSocketSyncClient implements KSyncSync {
     private maxReconnectAttempts = 10,    // Increased from 5
     private reconnectDelay = 1000,
     private debug = false,
-    rateLimitConfig?: Partial<RateLimitConfig>
+    rateLimitConfig?: Partial<RateLimitConfig>,
+    private suppressExpectedErrors = false // New: suppress expected connection failures
   ) {
     if (rateLimitConfig) {
       this.rateLimitConfig = { ...this.rateLimitConfig, ...rateLimitConfig };
@@ -168,7 +169,11 @@ export class WebSocketSyncClient implements KSyncSync {
           } else {
             errorMessage = `WebSocket error: Connection failed`;
           }
-          this.log(errorMessage)
+          
+          // Only log if not suppressing expected errors or if debug is enabled
+          if (!this.suppressExpectedErrors || this.debug) {
+            this.log(errorMessage)
+          }
           
           this.handleConnectionFailure()
           
@@ -323,7 +328,11 @@ export class WebSocketSyncClient implements KSyncSync {
 
   private handleConnectionFailure(): void {
     this.consecutiveFailures++
-    this.log(`Connection failure ${this.consecutiveFailures}/${this.maxConsecutiveFailures}`)
+    
+    // Only log if not suppressing expected errors or if debug is enabled
+    if (!this.suppressExpectedErrors || this.debug) {
+      this.log(`Connection failure ${this.consecutiveFailures}/${this.maxConsecutiveFailures}`)
+    }
     
     if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
       this.openCircuitBreaker()
@@ -333,7 +342,11 @@ export class WebSocketSyncClient implements KSyncSync {
   private openCircuitBreaker(): void {
     this.isCircuitBreakerOpen = true
     this.circuitBreakerOpenTime = Date.now()
-    this.log(`Circuit breaker opened due to ${this.consecutiveFailures} consecutive failures`)
+    
+    // Only log if not suppressing expected errors or if debug is enabled
+    if (!this.suppressExpectedErrors || this.debug) {
+      this.log(`Circuit breaker opened due to ${this.consecutiveFailures} consecutive failures`)
+    }
   }
 
   private resetCircuitBreaker(): void {
