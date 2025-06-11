@@ -1,6 +1,6 @@
 {
   "name": "@klastra/ksync",
-  "version": "0.2.5-internal.test.1",
+  "version": "0.2.5-internal.test.2",
   "description": "Real-time sync engine for modern applications with 300k+ ops/sec performance",
   "type": "module",
   "main": "dist/index.js",
@@ -49,6 +49,7 @@
     "test:all": "bun run src/__tests__/ksync.basic.test.ts",
     "test:package": "bun run examples/simple-test.ts",
     "test:collaborative": "npx tsx examples/collaborative-editor.ts",
+    "test:real-sync": "npx tsx test-real-sync.ts",
     "benchmark": "npx tsx scripts/real-benchmark.ts",
     "benchmark:extended": "bun run scripts/extended-benchmark.ts",
     "benchmark:quick": "bun run scripts/quick-scale-test.ts",

@@ -183,6 +183,11 @@ export class KSync extends EventEmitter {
     averageMaterializationTime: 0
   };
 
+  // FIXED: Track timers/intervals for proper cleanup
+  private performanceInterval?: NodeJS.Timeout;
+  private onlineListener?: () => void;
+  private offlineListener?: () => void;
+
   constructor(config: KSyncConfig = {}) {
     super();
     
@@ -626,12 +631,41 @@ export class KSync extends EventEmitter {
    * Disconnect from the sync server
    */
   async disconnect(): Promise<void> {
+    // FIXED: Proper cleanup to prevent tests hanging
+    
+    // Clean up sync client
     if (this.syncClient) {
       await this.syncClient.disconnect();
     }
     this.isConnected = false;
     
-    log(this.config.debug, 'sync', 'Disconnected from server');
+    // Clean up timers and intervals
+    if (this.eventBatchTimeout) {
+      clearTimeout(this.eventBatchTimeout);
+      this.eventBatchTimeout = undefined;
+    }
+    
+    if (this.performanceInterval) {
+      clearInterval(this.performanceInterval);
+      this.performanceInterval = undefined;
+    }
+    
+    // Clean up event listeners
+    if (typeof window !== 'undefined') {
+      if (this.onlineListener) {
+        window.removeEventListener('online', this.onlineListener);
+        this.onlineListener = undefined;
+      }
+      if (this.offlineListener) {
+        window.removeEventListener('offline', this.offlineListener);
+        this.offlineListener = undefined;
+      }
+    }
+    
+    // Clean up all event listeners from EventEmitter
+    this.removeAllListeners();
+    
+    log(this.config.debug, 'sync', 'Disconnected from server and cleaned up resources');
     this.emit('disconnected');
   }
 
@@ -802,7 +836,8 @@ export class KSync extends EventEmitter {
   private setupOfflineHandling(): void {
     if (!this.config.offline.enabled || typeof window === 'undefined') return;
 
-    window.addEventListener('online', () => {
+    // FIXED: Track event listeners for proper cleanup
+    this.onlineListener = () => {
       this.isOnline = true;
       log(this.config.debug, 'offline', 'Back online');
       
@@ -813,20 +848,23 @@ export class KSync extends EventEmitter {
       }
       
       this.emit('online');
-    });
+    };
 
-    window.addEventListener('offline', () => {
+    this.offlineListener = () => {
       this.isOnline = false;
       log(this.config.debug, 'offline', 'Gone offline');
       this.emit('offline');
-    });
+    };
+
+    window.addEventListener('online', this.onlineListener);
+    window.addEventListener('offline', this.offlineListener);
   }
 
   private setupPerformanceMonitoring(): void {
     if (!this.config.debug.performance) return;
 
-    // Log performance metrics every 60 seconds (less spam)
-    setInterval(() => {
+    // FIXED: Track interval for proper cleanup
+    this.performanceInterval = setInterval(() => {
       // Only log if there's actual activity
       if (this.performanceMetrics.eventsProcessed > 0 || this.performanceMetrics.materializationCount > 0) {
         log(this.config.debug, 'performance', 'Metrics:', this.performanceMetrics);
@@ -1174,19 +1212,21 @@ export function createKSync(config?: KSyncConfig): KSync {
 export function createChat(room: string, config?: Partial<KSyncConfig>): KSync {
   return new KSync({
     room,
-    serverUrl: config?.serverUrl || 'ws://localhost:8080/ws',
+    // FIXED: Don't force server URL or sync - let user configure
+    serverUrl: config?.serverUrl,
     features: {
       presence: true,
       streaming: false,
       ...config?.features
     },
     sync: {
-      enabled: true, // Enable sync by default for better UX
-      mode: 'realtime', // Use realtime mode for chat
+      // FIXED: Only enable sync if serverUrl is provided
+      enabled: config?.sync?.enabled ?? Boolean(config?.serverUrl),
+      mode: 'realtime',
       options: {
         autoReconnect: true,
-        maxReconnectAttempts: 10, // More reconnection attempts
-        reconnectDelay: 1000, // Standard delay
+        maxReconnectAttempts: 10,
+        reconnectDelay: 1000,
         ...config?.sync?.options
       },
       ...config?.sync
@@ -1212,6 +1252,8 @@ export function createChat(room: string, config?: Partial<KSyncConfig>): KSync {
 export function createTodos(config?: Partial<KSyncConfig>): KSync {
   return new KSync({
     room: 'todos',
+    // FIXED: Only enable sync if serverUrl is provided
+    serverUrl: config?.serverUrl,
     offline: {
       enabled: true,
       queueSize: 5000,
@@ -1227,7 +1269,11 @@ export function createTodos(config?: Partial<KSyncConfig>): KSync {
       },
       ...config?.storage
     },
-    debug: true,
+    sync: {
+      enabled: config?.sync?.enabled ?? Boolean(config?.serverUrl),
+      ...config?.sync
+    },
+    debug: config?.debug ?? false, // FIXED: Don't force debug
     ...config
   });
 }
@@ -1241,9 +1287,11 @@ export function createTodos(config?: Partial<KSyncConfig>): KSync {
 export function createGame(gameId: string, config?: Partial<KSyncConfig>): KSync {
   return new KSync({
     room: `game-${gameId}`,
+    // FIXED: Only enable sync if serverUrl is provided
+    serverUrl: config?.serverUrl,
     performance: {
-      batchSize: 50,    // Smaller batches for lower latency
-      batchDelay: 5,    // Faster batching for real-time updates
+      batchSize: 50,
+      batchDelay: 5,
       ...config?.performance
     },
     features: {
@@ -1251,7 +1299,11 @@ export function createGame(gameId: string, config?: Partial<KSyncConfig>): KSync
       streaming: true,
       ...config?.features
     },
-    debug: true,
+    sync: {
+      enabled: config?.sync?.enabled ?? Boolean(config?.serverUrl),
+      ...config?.sync
+    },
+    debug: config?.debug ?? false, // FIXED: Don't force debug
     ...config
   });
 }
@@ -1265,17 +1317,23 @@ export function createGame(gameId: string, config?: Partial<KSyncConfig>): KSync
 export function createAI(conversationId?: string, config?: Partial<KSyncConfig>): KSync {
   return new KSync({
     room: conversationId || 'ai-chat',
+    // FIXED: Only enable sync if serverUrl is provided
+    serverUrl: config?.serverUrl,
     features: {
       streaming: true,
       presence: false,
       ...config?.features
     },
     performance: {
-      batchSize: 10,    // Small batches for streaming
-      batchDelay: 1,    // Very fast for AI streaming
+      batchSize: 10,
+      batchDelay: 1,
       ...config?.performance
     },
-    debug: true,
+    sync: {
+      enabled: config?.sync?.enabled ?? Boolean(config?.serverUrl),
+      ...config?.sync
+    },
+    debug: config?.debug ?? false, // FIXED: Don't force debug
     ...config
   });
 } 

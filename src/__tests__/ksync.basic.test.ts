@@ -26,6 +26,13 @@ class TestSuite {
       }
     }
 
+    // FIXED: Clean up all instances to prevent hanging
+    try {
+      await cleanupAllInstances();
+    } catch (error) {
+      console.log('Warning: Cleanup failed:', error);
+    }
+
     console.log(`\n📊 Results: ${this.passed} passed, ${this.failed} failed`);
     
     if (this.failed === 0) {
@@ -134,6 +141,41 @@ function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// FIXED: Track all KSync instances for cleanup
+const activeInstances: any[] = [];
+
+function createKSyncForTest(config?: any): any {
+  const instance = createKSync(config);
+  activeInstances.push(instance);
+  return instance;
+}
+
+function createChatForTest(room: string, config?: any): any {
+  const instance = createChat(room, config);
+  activeInstances.push(instance);
+  return instance;
+}
+
+function createKSyncInstanceForTest(config?: any): any {
+  const instance = new KSync(config);
+  activeInstances.push(instance);
+  return instance;
+}
+
+async function cleanupAllInstances(): Promise<void> {
+  // Clean up all instances to prevent hanging
+  const cleanupPromises = activeInstances.map(async (instance) => {
+    try {
+      await instance.disconnect();
+    } catch (error) {
+      // Ignore cleanup errors
+    }
+  });
+  
+  await Promise.all(cleanupPromises);
+  activeInstances.length = 0; // Clear the array
+}
+
 // Mock globals for testing
 Object.defineProperty(global, 'WebSocket', {
   value: class MockWebSocket {
@@ -167,8 +209,8 @@ const suite = new TestSuite();
 
 // === CONFIGURATION TESTS ===
 
-suite.test('should initialize with default configuration', () => {
-  const ksync = new KSync();
+suite.test('should initialize with default configuration', async () => {
+  const ksync = createKSyncInstanceForTest();
   const status = ksync.getStatus();
   
   expect(status.room).toBe('default');
@@ -178,8 +220,8 @@ suite.test('should initialize with default configuration', () => {
   expect(status.online).toBe(true);
 });
 
-suite.test('should initialize with custom configuration', () => {
-  const ksync = new KSync({
+suite.test('should initialize with custom configuration', async () => {
+  const ksync = createKSyncInstanceForTest({
     serverUrl: 'ws://localhost:8080',
     room: 'test-room',
     userId: 'test-user',
@@ -199,7 +241,7 @@ suite.test('should initialize with custom configuration', () => {
 // === EVENT HANDLING TESTS ===
 
 suite.test('should send and receive events', async () => {
-  const ksync = new KSync({
+  const ksync = createKSyncInstanceForTest({
     storage: { instance: new MemoryStorage() },
     performance: { batchSize: 1, batchDelay: 1 }, // Immediate processing
     debug: false
@@ -208,7 +250,7 @@ suite.test('should send and receive events', async () => {
   const eventData = { message: 'Hello World', timestamp: Date.now() };
   const receivedEvents: any[] = [];
 
-  ksync.on('test-event', (data, event) => {
+  ksync.on('test-event', (data: any, event: any) => {
     receivedEvents.push({ data, event });
   });
 
