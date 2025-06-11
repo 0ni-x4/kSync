@@ -7,11 +7,11 @@ import {
   StreamChunk,
   PresenceInfo,
   KSyncError
-} from './types.js';
-import { MemoryStorage } from './storage/memory.js';
-import { IndexedDBStorage } from './storage/indexeddb.js';
-import { WebSocketSyncClient } from './sync/websocket-client.js';
-import { generateId } from './utils.js';
+} from './types';
+import { MemoryStorage } from './storage/memory';
+import { IndexedDBStorage } from './storage/indexeddb';
+import { WebSocketSyncClient } from './sync/websocket-client';
+import { generateId } from './utils';
 
 // 🎯 Clear, comprehensive configuration with good defaults
 export interface KSyncConfig {
@@ -258,6 +258,7 @@ export class KSync extends EventEmitter {
       }
     }
     
+    // Always track performance metrics regardless of sync status
     this.updatePerformanceMetrics('eventProcessing', performance.now() - startTime);
   }
 
@@ -782,7 +783,7 @@ export class KSync extends EventEmitter {
 
     // Initialize WebSocket client if serverUrl is provided and no custom client
     if (this.config.serverUrl && !this.config.sync.client) {
-      const { WebSocketSyncClient } = await import('./sync/websocket-client.js');
+      const { WebSocketSyncClient } = await import('./sync/websocket-client');
       this.syncClient = new WebSocketSyncClient(
         this.config.serverUrl,
         this.config.sync.options.maxReconnectAttempts,
@@ -1124,18 +1125,27 @@ export class KSync extends EventEmitter {
       case 'eventProcessing':
         this.performanceMetrics.eventsProcessed++;
         this.performanceMetrics.averageProcessingTime = 
-          (this.performanceMetrics.averageProcessingTime + value) / 2;
+          this.performanceMetrics.averageProcessingTime === 0 
+            ? value 
+            : (this.performanceMetrics.averageProcessingTime + value) / 2;
         break;
         
       case 'materialization':
         this.performanceMetrics.materializationCount++;
         this.performanceMetrics.averageMaterializationTime = 
-          (this.performanceMetrics.averageMaterializationTime + value) / 2;
+          this.performanceMetrics.averageMaterializationTime === 0
+            ? value
+            : (this.performanceMetrics.averageMaterializationTime + value) / 2;
         break;
         
       case 'eventsProcessed':
         this.performanceMetrics.eventsProcessed += value;
         break;
+    }
+    
+    // Log for debugging in test environment
+    if (this.config.debug.performance) {
+      log(this.config.debug, 'performance', `Metrics updated - ${type}: ${value}`, this.performanceMetrics);
     }
   }
 

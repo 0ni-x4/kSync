@@ -1,6 +1,6 @@
 {
   "name": "@klastra/ksync",
-  "version": "0.2.5",
+  "version": "0.2.5-internal.test.1",
   "description": "Real-time sync engine for modern applications with 300k+ ops/sec performance",
   "type": "module",
   "main": "dist/index.js",
@@ -28,7 +28,7 @@
       "require": "./dist/storage/*.js"
     },
     "./sync/*": {
-      "types": "./dist/sync/*.d.ts", 
+      "types": "./dist/sync/*.d.ts",
       "import": "./dist/sync/*.js",
       "require": "./dist/sync/*.js"
     }
@@ -45,21 +45,24 @@
     "build:server": "tsc server/*.ts --outDir dist --rootDir . --declaration --module Node16 --target ES2022 --moduleResolution Node16",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
-    "test": "node src/__tests__/ksync.basic.test.js",
+    "test": "npx tsx src/__tests__/ksync.basic.test.ts",
     "test:all": "bun run src/__tests__/ksync.basic.test.ts",
     "test:package": "bun run examples/simple-test.ts",
-    "benchmark": "bun run scripts/benchmark.ts",
+    "test:collaborative": "npx tsx examples/collaborative-editor.ts",
+    "benchmark": "npx tsx scripts/real-benchmark.ts",
     "benchmark:extended": "bun run scripts/extended-benchmark.ts",
     "benchmark:quick": "bun run scripts/quick-scale-test.ts",
     "benchmark:final": "bun run scripts/final-benchmark.ts",
+    "benchmark:real": "npx tsx scripts/real-benchmark.ts",
     "example:basic": "bun run examples/basic.ts",
     "example:sync": "bun run examples/sync.ts",
     "example:advanced": "bun run examples/advanced-features.ts",
     "example:streaming": "bun run examples/streaming.ts",
     "example:working": "bun run examples/working-chat-example.ts",
+    "example:collaborative": "npx tsx examples/collaborative-editor.ts",
     "server": "bun run server/websocket-server.ts",
     "dev": "bun run scripts/dev-server.ts",
-    "prepublishOnly": "npm run clean && npm run build && npm run test:package",
+    "prepublishOnly": "npm run clean && npm run build && npm run test:package && npm run benchmark:real",
     "prepack": "npm run build"
   },
   "keywords": [
@@ -98,7 +101,8 @@
     "@types/jest": "^29.5.14",
     "@types/ws": "^8.5.8",
     "bun-types": "latest",
-    "tsx": "^4.19.4"
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
   },
   "peerDependencies": {
     "drizzle-orm": "^0.29.0",
