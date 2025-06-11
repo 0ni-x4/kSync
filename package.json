@@ -48,6 +48,7 @@
     "test": "node test-runner.js",
     "test:watch": "node test-runner.js --watch",
     "test:error-only": "npx tsx test-error-only.ts",
+    "test:package": "npm test && npm run test:connection-mgmt",
     "test:real-sync": "npx tsx scripts/test-real-sync.ts",
     "test:connection-mgmt": "npx tsx scripts/test-connection-management.ts",
     "benchmark": "npx tsx scripts/real-benchmark.ts",
