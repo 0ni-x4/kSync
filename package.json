@@ -1,6 +1,6 @@
 {
   "name": "@klastra/ksync",
-  "version": "0.2.5-internal.test.3",
+  "version": "0.2.5-internal.test.4",
   "description": "Real-time sync engine for modern applications with 300k+ ops/sec performance",
   "type": "module",
   "main": "dist/index.js",

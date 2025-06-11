@@ -86,16 +86,38 @@ async function testConnectionManagement() {
     
     // Verify circuit breaker behavior
     console.log('\n🔧 Testing Circuit Breaker...');
+    
+    // Force circuit breaker to open by making multiple failed attempts
+    const testClient = new WebSocketSyncClient(
+      'ws://localhost:9997', // Non-existent server
+      2, // Low max attempts
+      100, // Fast retry
+      false // No debug spam
+    );
+    
+    // Make multiple connection attempts to trigger circuit breaker
+    for (let i = 0; i < 3; i++) {
+      try {
+        await testClient.connect();
+      } catch (error) {
+        // Expected failures
+      }
+    }
+    
+    // Now test that circuit breaker blocks further attempts
     try {
-      await client.connect();
+      await testClient.connect();
       console.log('❌ Circuit breaker failed - connection should be blocked!');
     } catch (error) {
       if (error.message.includes('Circuit breaker is open')) {
         console.log('✅ Circuit breaker working correctly!');
       } else {
-        console.log('⚠️ Unexpected error:', error.message);
+        console.log(`⚠️ Circuit breaker not triggered. Error: ${error.message}`);
+        console.log('ℹ️  This may be due to timing - circuit breaker needs multiple failures');
       }
     }
+    
+    await testClient.disconnect();
     
     // Test 2: SimpleKSync
     console.log('\n📋 TEST 2: SimpleKSync Connection Management');

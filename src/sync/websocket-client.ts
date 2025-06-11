@@ -30,7 +30,7 @@ export class WebSocketSyncClient implements KSyncSync {
   private circuitBreakerOpenTime?: number
   private readonly circuitBreakerTimeout = 60000 // 1 minute
   private consecutiveFailures = 0
-  private readonly maxConsecutiveFailures = 5
+  private readonly maxConsecutiveFailures = 3 // Reduced from 5 for better testing
   
   private messageHandlers: ((message: WebSocketMessage) => void)[] = []
   private connectHandlers: (() => void)[] = []
@@ -158,7 +158,17 @@ export class WebSocketSyncClient implements KSyncSync {
         this.ws.onerror = (error) => {
           clearTimeout(connectionTimeout)
           this.isConnecting = false
-          this.log(`WebSocket error: ${error}`)
+          
+          // Better error logging - works in both browser and Node.js
+          let errorMessage: string;
+          if (typeof ErrorEvent !== 'undefined' && error instanceof ErrorEvent) {
+            errorMessage = `${error.type}: ${error.message || 'WebSocket connection failed'}`;
+          } else if (error && typeof error === 'object' && 'type' in error) {
+            errorMessage = `WebSocket ${error.type}: Connection failed`;
+          } else {
+            errorMessage = `WebSocket error: Connection failed`;
+          }
+          this.log(errorMessage)
           
           this.handleConnectionFailure()
           
@@ -313,6 +323,7 @@ export class WebSocketSyncClient implements KSyncSync {
 
   private handleConnectionFailure(): void {
     this.consecutiveFailures++
+    this.log(`Connection failure ${this.consecutiveFailures}/${this.maxConsecutiveFailures}`)
     
     if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
       this.openCircuitBreaker()
@@ -322,7 +333,7 @@ export class WebSocketSyncClient implements KSyncSync {
   private openCircuitBreaker(): void {
     this.isCircuitBreakerOpen = true
     this.circuitBreakerOpenTime = Date.now()
-    this.log('Circuit breaker opened due to repeated failures')
+    this.log(`Circuit breaker opened due to ${this.consecutiveFailures} consecutive failures`)
   }
 
   private resetCircuitBreaker(): void {

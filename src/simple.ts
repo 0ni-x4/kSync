@@ -57,7 +57,15 @@ export class SimpleKSync {
     if (this.config.serverUrl) {
       // Handle connection promise to prevent unhandled rejection
       this.connect().catch(error => {
-        this.log('❌ Auto-connect failed:', error);
+        let errorMessage: string;
+        if (typeof ErrorEvent !== 'undefined' && error instanceof ErrorEvent) {
+          errorMessage = `Auto-connect failed: ${error.type} - ${error.message || 'Connection failed'}`;
+        } else if (error && typeof error === 'object' && 'message' in error) {
+          errorMessage = `Auto-connect failed: ${error.message}`;
+        } else {
+          errorMessage = `Auto-connect failed: ${error}`;
+        }
+        this.log('❌', errorMessage);
         // Don't throw here - let the user handle connection manually if needed
       });
     }
@@ -217,7 +225,17 @@ export class SimpleKSync {
         this.ws.onerror = (error) => {
           this.isConnecting = false;
           this.consecutiveFailures++;
-          this.log('❌ WebSocket error:', error);
+          
+          // Better error logging - works in both browser and Node.js
+          let errorMessage: string;
+          if (typeof ErrorEvent !== 'undefined' && error instanceof ErrorEvent) {
+            errorMessage = `WebSocket ${error.type}: ${error.message || 'Connection failed'}`;
+          } else if (error && typeof error === 'object' && 'type' in error) {
+            errorMessage = `WebSocket ${(error as any).type}: Connection failed`;
+          } else {
+            errorMessage = `WebSocket error: Connection failed`;
+          }
+          this.log('❌', errorMessage);
           
           if (!this.isConnected) {
             reject(error);
