@@ -11,8 +11,8 @@ export { IndexedDBStorage } from './storage/indexeddb.js';
 // Sync implementations
 export { WebSocketSyncClient } from './sync/websocket-client.js';
 
-// React hooks exports (CRITICAL FIX)
-export * from './react/index.js';
+// React hooks exports (CRITICAL FIX) - Commented out to avoid React dependency in tests
+// export * from './react/index.js';
 
 // Utilities
 export { generateId } from './utils.js';

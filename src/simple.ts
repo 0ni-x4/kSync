@@ -26,12 +26,19 @@ export class SimpleKSync {
   private ws?: WebSocket;
   private config: Required<SimpleKSyncConfig>;
   private isConnected = false;
+  private isConnecting = false; // Added to prevent multiple concurrent connections
   private isOnline = navigator?.onLine ?? true;
   private messageQueue: SimpleMessage[] = [];
   private listeners = new Map<string, Function[]>();
   private offlineStorage = new Map<string, any>();
   private reconnectTimer?: NodeJS.Timeout;
   private syncTimer?: NodeJS.Timeout;
+  
+  // Connection failure tracking
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private consecutiveFailures = 0;
+  private maxConsecutiveFailures = 3;
 
   constructor(config: SimpleKSyncConfig) {
     this.config = {
@@ -48,7 +55,11 @@ export class SimpleKSync {
     this.loadOfflineData();
     
     if (this.config.serverUrl) {
-      this.connect();
+      // Handle connection promise to prevent unhandled rejection
+      this.connect().catch(error => {
+        this.log('❌ Auto-connect failed:', error);
+        // Don't throw here - let the user handle connection manually if needed
+      });
     }
   }
 
@@ -137,7 +148,14 @@ export class SimpleKSync {
 
   // 🔌 Connection management
   async connect(): Promise<void> {
-    if (this.isConnected || !this.config.serverUrl) return;
+    if (this.isConnected || this.isConnecting || !this.config.serverUrl) return;
+
+    // Check if we've exceeded max attempts
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      throw new Error(`Max reconnect attempts (${this.maxReconnectAttempts}) exceeded`);
+    }
+
+    this.isConnecting = true;
 
     return new Promise((resolve, reject) => {
       try {
@@ -145,6 +163,9 @@ export class SimpleKSync {
         
         this.ws.onopen = async () => {
           this.isConnected = true;
+          this.isConnecting = false;
+          this.reconnectAttempts = 0; // Reset on successful connection
+          this.consecutiveFailures = 0; // Reset failure count
           this.log('🚀 Connected to server');
 
           // Join room
@@ -182,18 +203,30 @@ export class SimpleKSync {
 
         this.ws.onclose = () => {
           this.isConnected = false;
+          this.isConnecting = false;
           this.log('🔌 Disconnected from server');
-          this.scheduleReconnect();
+          
+          // Only schedule reconnect if we haven't exceeded limits
+          if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.scheduleReconnect();
+          } else {
+            this.log('🛑 Max reconnection attempts reached, giving up');
+          }
         };
 
         this.ws.onerror = (error) => {
+          this.isConnecting = false;
+          this.consecutiveFailures++;
           this.log('❌ WebSocket error:', error);
+          
           if (!this.isConnected) {
             reject(error);
           }
         };
 
       } catch (error) {
+        this.isConnecting = false;
+        this.consecutiveFailures++;
         reject(error);
       }
     });
@@ -202,15 +235,20 @@ export class SimpleKSync {
   disconnect(): void {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
     }
     if (this.syncTimer) {
       clearInterval(this.syncTimer);
+      this.syncTimer = undefined;
     }
     if (this.ws) {
       this.ws.close();
       this.ws = undefined;
     }
     this.isConnected = false;
+    this.isConnecting = false;
+    this.reconnectAttempts = 0;
+    this.consecutiveFailures = 0;
   }
 
   // 🔧 Private methods
@@ -303,15 +341,39 @@ export class SimpleKSync {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer || !this.isOnline) return;
+    // Don't schedule if we're already trying to reconnect or have exceeded limits
+    if (this.reconnectTimer || !this.isOnline || 
+        this.reconnectAttempts >= this.maxReconnectAttempts ||
+        this.consecutiveFailures >= this.maxConsecutiveFailures) {
+      return;
+    }
 
-    this.reconnectTimer = setTimeout(() => {
+    this.reconnectAttempts++;
+    
+    // Exponential backoff with maximum delay
+    const baseDelay = 3000;
+    const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
+    
+    this.log(`🔄 Scheduling reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+
+    this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = undefined;
-      if (this.isOnline) {
+      
+      if (this.isOnline && !this.isConnected && !this.isConnecting) {
         this.log('🔄 Attempting to reconnect...');
-        this.connect().catch(() => this.scheduleReconnect());
+        
+        try {
+          await this.connect();
+          this.log('✅ Reconnection successful!');
+        } catch (error) {
+          this.log(`❌ Reconnection failed: ${error}`);
+          
+          // 🔥 FIXED: No more infinite recursion!
+          // The onclose handler will decide whether to schedule another attempt
+          // based on the reconnectAttempts counter
+        }
       }
-    }, 3000); // Wait 3 seconds before reconnecting
+    }, delay);
   }
 
   private storeOffline(message: SimpleMessage): void {

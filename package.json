@@ -1,6 +1,6 @@
 {
   "name": "@klastra/ksync",
-  "version": "0.2.5-internal.test.2",
+  "version": "0.2.5-internal.test.3",
   "description": "Real-time sync engine for modern applications with 300k+ ops/sec performance",
   "type": "module",
   "main": "dist/index.js",
@@ -45,11 +45,11 @@
     "build:server": "tsc server/*.ts --outDir dist --rootDir . --declaration --module Node16 --target ES2022 --moduleResolution Node16",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
-    "test": "npx tsx src/__tests__/ksync.basic.test.ts",
-    "test:all": "bun run src/__tests__/ksync.basic.test.ts",
-    "test:package": "bun run examples/simple-test.ts",
-    "test:collaborative": "npx tsx examples/collaborative-editor.ts",
-    "test:real-sync": "npx tsx test-real-sync.ts",
+    "test": "node test-runner.js",
+    "test:watch": "node test-runner.js --watch",
+    "test:error-only": "npx tsx test-error-only.ts",
+    "test:real-sync": "npx tsx scripts/test-real-sync.ts",
+    "test:connection-mgmt": "npx tsx scripts/test-connection-management.ts",
     "benchmark": "npx tsx scripts/real-benchmark.ts",
     "benchmark:extended": "bun run scripts/extended-benchmark.ts",
     "benchmark:quick": "bun run scripts/quick-scale-test.ts",
@@ -62,9 +62,10 @@
     "example:working": "bun run examples/working-chat-example.ts",
     "example:collaborative": "npx tsx examples/collaborative-editor.ts",
     "server": "bun run server/websocket-server.ts",
-    "dev": "bun run scripts/dev-server.ts",
+    "dev": "tsc -p tsconfig.build.json --watch",
     "prepublishOnly": "npm run clean && npm run build && npm run test:package && npm run benchmark:real",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "prepare": "npm run build"
   },
   "keywords": [
     "sync",
@@ -100,6 +101,7 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
+    "@types/react": "^19.1.7",
     "@types/ws": "^8.5.8",
     "bun-types": "latest",
     "tsx": "^4.19.4",

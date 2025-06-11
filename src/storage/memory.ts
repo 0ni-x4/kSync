@@ -1,4 +1,4 @@
-import type { KSyncEvent, KSyncStorage } from '../types';
+import type { KSyncEvent, KSyncStorage } from '../types.js';
 
 export interface MemoryStorageOptions {
   maxEvents?: number;      // Maximum events to store (default: 10000)

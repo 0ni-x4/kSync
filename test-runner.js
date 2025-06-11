@@ -1,4 +1,6 @@
-const { KSync, createKSync, createChat } = require('./dist/index.js');
+import { KSync, createKSync } from './dist/index.js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 async function runBasicTest() {
   console.log('🧪 Running Basic KSync Test');
@@ -8,14 +10,14 @@ async function runBasicTest() {
     const ksync = new KSync();
     console.log('✅ Basic KSync creation works');
     
-    // Test factory functions
-    const chat = createChat('test-room');
-    console.log('✅ Chat factory works');
+    // Test factory functions  
+    const simple = createKSync({ serverUrl: undefined }); // Don't try to connect
+    console.log('✅ Simple factory works');
     
-    // Test events
+    // Test events without connection
     let eventReceived = false;
-    chat.on('test', () => { eventReceived = true; });
-    await chat.send('test', { message: 'hello' });
+    simple.on('test', () => { eventReceived = true; });
+    await simple.send('test', { message: 'hello' });
     
     setTimeout(() => {
       if (eventReceived) {
@@ -24,8 +26,8 @@ async function runBasicTest() {
         console.log('❌ Event handling failed');
       }
       
-      const status = chat.getStatus();
-      console.log(`📊 Status: ${status.events} events, room: ${status.room}`);
+      const status = simple.getStatus();
+      console.log(`📊 Status: online: ${status.online}, room: ${status.room}`);
       console.log('🎉 Basic test completed successfully!');
     }, 100);
     

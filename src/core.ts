@@ -7,11 +7,11 @@ import {
   StreamChunk,
   PresenceInfo,
   KSyncError
-} from './types';
-import { MemoryStorage } from './storage/memory';
-import { IndexedDBStorage } from './storage/indexeddb';
-import { WebSocketSyncClient } from './sync/websocket-client';
-import { generateId } from './utils';
+} from './types.js';
+import { MemoryStorage } from './storage/memory.js';
+import { IndexedDBStorage } from './storage/indexeddb.js';
+import { WebSocketSyncClient } from './sync/websocket-client.js';
+import { generateId } from './utils.js';
 
 // 🎯 Clear, comprehensive configuration with good defaults
 export interface KSyncConfig {
@@ -817,7 +817,7 @@ export class KSync extends EventEmitter {
 
     // Initialize WebSocket client if serverUrl is provided and no custom client
     if (this.config.serverUrl && !this.config.sync.client) {
-      const { WebSocketSyncClient } = await import('./sync/websocket-client');
+      const { WebSocketSyncClient } = await import('./sync/websocket-client.js');
       this.syncClient = new WebSocketSyncClient(
         this.config.serverUrl,
         this.config.sync.options.maxReconnectAttempts,

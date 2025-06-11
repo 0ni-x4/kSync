@@ -1,4 +1,4 @@
-import { KSyncSync, WebSocketMessage, KSyncError } from '../types'
+import { KSyncSync, WebSocketMessage, KSyncError } from '../types.js'
 
 export interface ConnectionHealthMetrics {
   connectionsAttempted: number;
@@ -24,6 +24,13 @@ export class WebSocketSyncClient implements KSyncSync {
   private reconnectTimeout?: NodeJS.Timeout
   private pingInterval?: NodeJS.Timeout
   private healthCheckInterval?: NodeJS.Timeout
+  
+  // Circuit breaker state
+  private isCircuitBreakerOpen = false
+  private circuitBreakerOpenTime?: number
+  private readonly circuitBreakerTimeout = 60000 // 1 minute
+  private consecutiveFailures = 0
+  private readonly maxConsecutiveFailures = 5
   
   private messageHandlers: ((message: WebSocketMessage) => void)[] = []
   private connectHandlers: (() => void)[] = []
@@ -61,6 +68,17 @@ export class WebSocketSyncClient implements KSyncSync {
   }
 
   async connect(): Promise<void> {
+    // Check circuit breaker
+    if (this.isCircuitBreakerOpen) {
+      if (this.circuitBreakerOpenTime && 
+          Date.now() - this.circuitBreakerOpenTime < this.circuitBreakerTimeout) {
+        throw new KSyncError('Circuit breaker is open - too many failures', 'CIRCUIT_BREAKER_OPEN')
+      } else {
+        // Reset circuit breaker after timeout
+        this.resetCircuitBreaker()
+      }
+    }
+
     if (this.isConnected() || this.isConnecting) {
       return
     }
@@ -79,6 +97,7 @@ export class WebSocketSyncClient implements KSyncSync {
         if (this.ws) {
           this.ws.close()
         }
+        this.handleConnectionFailure()
         reject(new KSyncError(`Connection timeout after ${timeoutMs}ms`, 'CONNECTION_TIMEOUT'))
       }, timeoutMs)
 
@@ -89,6 +108,7 @@ export class WebSocketSyncClient implements KSyncSync {
           clearTimeout(connectionTimeout)
           this.isConnecting = false
           this.reconnectAttempts = 0
+          this.consecutiveFailures = 0 // Reset failure count on success
           this.healthMetrics.connectionsSuccessful++;
           this.startHealthMonitoring()
           this.log('Connected to server')
@@ -127,8 +147,10 @@ export class WebSocketSyncClient implements KSyncSync {
           this.disconnectHandlers.forEach(handler => handler())
           
           // Only schedule reconnect if we've had successful connections before
-          // or if this wasn't the initial connection attempt
-          if (this.healthMetrics.connectionsSuccessful > 0) {
+          // AND we haven't hit the reconnect limit
+          if (this.healthMetrics.connectionsSuccessful > 0 && 
+              this.reconnectAttempts < this.maxReconnectAttempts &&
+              !this.isCircuitBreakerOpen) {
             this.scheduleReconnect()
           }
         }
@@ -138,6 +160,8 @@ export class WebSocketSyncClient implements KSyncSync {
           this.isConnecting = false
           this.log(`WebSocket error: ${error}`)
           
+          this.handleConnectionFailure()
+          
           // Always reject on the first connection attempt error
           if (this.reconnectAttempts === 0) {
             reject(new KSyncError('Failed to connect', 'CONNECTION_ERROR'))
@@ -146,6 +170,7 @@ export class WebSocketSyncClient implements KSyncSync {
       } catch (error) {
         clearTimeout(connectionTimeout)
         this.isConnecting = false
+        this.handleConnectionFailure()
         reject(new KSyncError('Failed to create WebSocket', 'CONNECTION_ERROR'))
       }
     })
@@ -153,14 +178,24 @@ export class WebSocketSyncClient implements KSyncSync {
 
   async disconnect(): Promise<void> {
     this.stopHealthMonitoring()
+    
+    // Clear all timers and reset state
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout)
+      this.reconnectTimeout = undefined
     }
+    
+    // Reset connection state
+    this.isConnecting = false
+    this.reconnectAttempts = 0
+    this.resetCircuitBreaker()
     
     if (this.ws) {
       this.ws.close(1000, 'Client disconnect') // Normal closure
       this.ws = undefined
     }
+    
+    this.log('Disconnected and cleaned up all resources')
   }
 
   async send(message: WebSocketMessage): Promise<void> {
@@ -226,9 +261,22 @@ export class WebSocketSyncClient implements KSyncSync {
   }
 
   private scheduleReconnect(): void {
+    // Check if we should stop reconnecting
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       this.log('Max reconnect attempts reached')
+      this.openCircuitBreaker()
       return
+    }
+
+    // Check if circuit breaker is open
+    if (this.isCircuitBreakerOpen) {
+      this.log('Circuit breaker is open, not scheduling reconnect')
+      return
+    }
+
+    // Clear any existing reconnect timeout
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout)
     }
 
     this.reconnectAttempts++
@@ -242,12 +290,47 @@ export class WebSocketSyncClient implements KSyncSync {
     
     this.log(`Reconnecting in ${delay.toFixed(0)}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
     
-    this.reconnectTimeout = setTimeout(() => {
-      this.connect().catch(error => {
+    this.reconnectTimeout = setTimeout(async () => {
+      this.reconnectTimeout = undefined
+      
+      try {
+        await this.connect()
+        this.log('Reconnect successful')
+      } catch (error) {
         this.log(`Reconnect failed: ${error}`)
-        this.scheduleReconnect(); // Schedule next attempt
-      })
+        
+        // 🔥 FIXED: No more infinite recursion!
+        // Instead of calling scheduleReconnect() again, we let the onclose handler
+        // decide whether to schedule another attempt based on connection state
+        
+        // If we've exhausted all attempts, open the circuit breaker
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+          this.openCircuitBreaker()
+        }
+      }
     }, delay)
+  }
+
+  private handleConnectionFailure(): void {
+    this.consecutiveFailures++
+    
+    if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
+      this.openCircuitBreaker()
+    }
+  }
+
+  private openCircuitBreaker(): void {
+    this.isCircuitBreakerOpen = true
+    this.circuitBreakerOpenTime = Date.now()
+    this.log('Circuit breaker opened due to repeated failures')
+  }
+
+  private resetCircuitBreaker(): void {
+    this.isCircuitBreakerOpen = false
+    this.circuitBreakerOpenTime = undefined
+    this.consecutiveFailures = 0
+    this.reconnectAttempts = 0
+    this.log('Circuit breaker reset')
   }
 
   private startHealthMonitoring(): void {
@@ -267,7 +350,7 @@ export class WebSocketSyncClient implements KSyncSync {
     // Health check interval
     this.healthCheckInterval = setInterval(() => {
       if (this.debug) {
-        this.log('Health metrics:', this.healthMetrics);
+        this.log(`Health metrics: ${JSON.stringify(this.healthMetrics)}`);
       }
     }, 60000); // Log health every minute in debug mode
   }
